@@ -194,6 +194,19 @@ const api = {
         }
 
         return results;
+    },
+
+    /**
+     * Fetch detailed game summary (box score, player stats).
+     */
+    async fetchGameSummary(gameId) {
+        try {
+            const response = await fetch(`${API_BASE}/summary?event=${gameId}`);
+            return await response.json();
+        } catch (error) {
+            console.error(`Failed to fetch game summary ${gameId}:`, error);
+            return null;
+        }
     }
 };
 

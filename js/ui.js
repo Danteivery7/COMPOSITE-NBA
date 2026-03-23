@@ -164,6 +164,253 @@ const ui = {
         }
 
         container.innerHTML = activeGames.map(game => this.createGameCard(game, now)).join('');
+
+        // Bind click handlers for expand/collapse
+        container.querySelectorAll('.game-card[data-game-id]').forEach(card => {
+            card.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const gameId = card.dataset.gameId;
+                const detail = card.querySelector('.game-detail-panel');
+                if (!detail) return;
+
+                const isOpen = detail.classList.contains('open');
+                // Close all others first
+                container.querySelectorAll('.game-detail-panel.open').forEach(p => {
+                    p.classList.remove('open');
+                    p.style.maxHeight = '0';
+                });
+
+                if (!isOpen) {
+                    detail.classList.add('open');
+                    detail.style.maxHeight = detail.scrollHeight + 'px';
+
+                    // If not loaded yet, fetch detail data
+                    if (!detail.dataset.loaded) {
+                        this.loadGameDetail(gameId, detail, card.dataset.gameState);
+                    }
+                }
+            });
+        });
+    },
+
+    async loadGameDetail(gameId, panel, state) {
+        panel.innerHTML = '<div style="text-align:center; padding:16px; color:var(--text-tertiary); font-size:12px;">Loading game details...</div>';
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+
+        const summary = await api.fetchGameSummary(gameId);
+        if (!summary) {
+            panel.innerHTML = '<div style="text-align:center; padding:16px; color:var(--text-tertiary);">Unable to load details</div>';
+            panel.style.maxHeight = panel.scrollHeight + 'px';
+            return;
+        }
+
+        panel.dataset.loaded = 'true';
+        let html = '';
+
+        if (state === 'pre') {
+            html = this.buildPreGameDetail(summary);
+        } else if (state === 'in') {
+            html = this.buildLiveGameDetail(summary);
+        } else {
+            html = this.buildPostGameDetail(summary);
+        }
+
+        panel.innerHTML = html;
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+    },
+
+    // ==================== PRE-GAME DETAIL ====================
+    buildPreGameDetail(summary) {
+        const boxscore = summary.boxscore;
+        const teams = boxscore?.teams || [];
+        const away = teams[0];
+        const home = teams[1];
+
+        // Get team ratings from our store
+        const getTeamRating = (teamId) => {
+            const r = store.state.teamRankings.find(t => String(t.id) === String(teamId));
+            return r ? r.stats : null;
+        };
+
+        const awayStats = getTeamRating(away?.team?.id);
+        const homeStats = getTeamRating(home?.team?.id);
+
+        // Build team stat comparison
+        const comparisons = [];
+        if (awayStats && homeStats) {
+            comparisons.push({ label: 'OVR', away: awayStats.ovrRating, home: homeStats.ovrRating });
+            comparisons.push({ label: 'OFF', away: awayStats.offRating, home: homeStats.offRating });
+            comparisons.push({ label: 'DEF', away: awayStats.defRating, home: homeStats.defRating });
+        }
+
+        // Season series / key stats from summary
+        const keyFacts = summary.keyEvents || summary.article?.keywords || [];
+
+        // Prediction
+        let predHtml = '';
+        if (summary.predictor) {
+            const awayChance = summary.predictor.awayTeam?.gameProjection || summary.predictor.awayTeam?.chance || '';
+            const homeChance = summary.predictor.homeTeam?.gameProjection || summary.predictor.homeTeam?.chance || '';
+            if (awayChance || homeChance) {
+                predHtml = `
+                    <div style="margin-top:12px; padding:10px; background:var(--bg-surface); border-radius:8px;">
+                        <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px; margin-bottom:8px;">ESPN Win Probability</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="text-align:center; flex:1;">
+                                <div style="font-size:20px; font-weight:800; color:${parseFloat(awayChance) > 50 ? 'var(--success-color)' : 'var(--text-secondary)'};">${parseFloat(awayChance).toFixed(1)}%</div>
+                                <div style="font-size:10px; color:var(--text-tertiary);">${away?.team?.abbreviation}</div>
+                            </div>
+                            <div style="font-size:11px; color:var(--text-tertiary); font-weight:700;">VS</div>
+                            <div style="text-align:center; flex:1;">
+                                <div style="font-size:20px; font-weight:800; color:${parseFloat(homeChance) > 50 ? 'var(--success-color)' : 'var(--text-secondary)'};">${parseFloat(homeChance).toFixed(1)}%</div>
+                                <div style="font-size:10px; color:var(--text-tertiary);">${home?.team?.abbreviation}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        return `
+            <div style="padding:12px 0;">
+                <div style="font-size:10px; color:var(--brand-accent); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:10px;">📋 Matchup Preview</div>
+                ${comparisons.length ? `
+                    <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:6px; margin-bottom:12px;">
+                        ${comparisons.map(c => {
+                            const awayVal = parseFloat(c.away) || 0;
+                            const homeVal = parseFloat(c.home) || 0;
+                            const awayWins = awayVal > homeVal;
+                            return `
+                                <div style="text-align:center; font-size:15px; font-weight:800; color:${awayWins ? 'var(--success-color)' : 'var(--text-secondary)'};">${c.away}</div>
+                                <div style="text-align:center; font-size:10px; color:var(--text-tertiary); font-weight:600; padding-top:3px;">${c.label}</div>
+                                <div style="text-align:center; font-size:15px; font-weight:800; color:${!awayWins ? 'var(--success-color)' : 'var(--text-secondary)'};">${c.home}</div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+                ${predHtml}
+                <div style="margin-top:10px; text-align:center; font-size:10px; color:var(--text-tertiary);">Tap to view more • Data via ESPN</div>
+            </div>
+        `;
+    },
+
+    // ==================== LIVE GAME DETAIL ====================
+    buildLiveGameDetail(summary) {
+        const boxscore = summary.boxscore;
+        const players = boxscore?.players || [];
+
+        let statsHtml = '';
+        players.forEach(teamBlock => {
+            const teamAbbr = teamBlock.team?.abbreviation || '?';
+            const stats = teamBlock.statistics || [];
+            if (stats.length === 0) return;
+
+            // Get top 5 scorers from the `athletes` array
+            const athleteStats = stats[0]?.athletes || [];
+            const sorted = athleteStats.slice().sort((a, b) => {
+                const apts = parseFloat(a.stats?.[0]) || 0;  // PTS is usually first
+                const bpts = parseFloat(b.stats?.[0]) || 0;
+                return bpts - apts;
+            }).slice(0, 5);
+
+            const headers = stats[0]?.labels?.slice(0, 6) || ['MIN', 'FG', '3PT', 'FT', 'REB', 'AST'];
+
+            statsHtml += `
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:11px; font-weight:700; color:var(--text-primary); margin-bottom:6px;">${teamAbbr}</div>
+                    <table style="width:100%; border-collapse:collapse; font-size:10px;">
+                        <thead>
+                            <tr style="color:var(--text-tertiary);">
+                                <th style="text-align:left; padding:2px 4px; font-weight:600;">Player</th>
+                                ${headers.map(h => `<th style="text-align:center; padding:2px 3px; font-weight:600;">${h}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sorted.map(a => `
+                                <tr style="color:var(--text-secondary);">
+                                    <td style="padding:2px 4px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:90px;">${a.athlete?.shortName || '?'}</td>
+                                    ${(a.stats || []).slice(0, 6).map((s, i) => `<td style="text-align:center; padding:2px 3px; font-variant-numeric:tabular-nums; ${i === 0 ? 'font-weight:700; color:var(--text-primary);' : ''}">${s}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        });
+
+        return `
+            <div style="padding:12px 0;">
+                <div style="font-size:10px; color:var(--live-color); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:10px;">
+                    <span class="dot pulse" style="display:inline-block;width:6px;height:6px;background:var(--live-color);border-radius:50%;margin-right:5px;vertical-align:middle;"></span>
+                    Live Box Score
+                </div>
+                ${statsHtml || '<div style="font-size:11px; color:var(--text-tertiary); text-align:center;">Box score loading...</div>'}
+            </div>
+        `;
+    },
+
+    // ==================== POST-GAME DETAIL ====================
+    buildPostGameDetail(summary) {
+        const boxscore = summary.boxscore;
+        const players = boxscore?.players || [];
+
+        let statsHtml = '';
+        players.forEach(teamBlock => {
+            const teamAbbr = teamBlock.team?.abbreviation || '?';
+            const teamColor = teamBlock.team?.color ? `#${teamBlock.team.color}` : 'var(--brand-accent)';
+            const stats = teamBlock.statistics || [];
+            if (stats.length === 0) return;
+
+            const athleteStats = stats[0]?.athletes || [];
+            const sorted = athleteStats.slice().sort((a, b) => {
+                const apts = parseFloat(a.stats?.[0]) || 0;
+                const bpts = parseFloat(b.stats?.[0]) || 0;
+                return bpts - apts;
+            }).slice(0, 6);
+
+            const headers = stats[0]?.labels?.slice(0, 7) || ['MIN', 'FG', '3PT', 'FT', 'REB', 'AST', 'PTS'];
+
+            statsHtml += `
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:11px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+                        <span style="width:3px; height:14px; background:${teamColor}; border-radius:2px; display:inline-block;"></span>
+                        ${teamAbbr}
+                    </div>
+                    <table style="width:100%; border-collapse:collapse; font-size:10px;">
+                        <thead>
+                            <tr style="color:var(--text-tertiary);">
+                                <th style="text-align:left; padding:2px 4px; font-weight:600;">Player</th>
+                                ${headers.map(h => `<th style="text-align:center; padding:2px 3px; font-weight:600;">${h}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sorted.map(a => {
+                                const pts = parseFloat(a.stats?.[a.stats.length - 1]) || 0;
+                                const isTopScorer = pts >= 25;
+                                return `
+                                    <tr style="color:${isTopScorer ? 'var(--text-primary)' : 'var(--text-secondary)'}; ${isTopScorer ? 'font-weight:600;' : ''}">
+                                        <td style="padding:2px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:90px;">${a.athlete?.shortName || '?'}</td>
+                                        ${(a.stats || []).slice(0, 7).map((s, i) => `<td style="text-align:center; padding:2px 3px; font-variant-numeric:tabular-nums; ${i === headers.length - 1 ? 'font-weight:700; color:var(--brand-accent);' : ''}">${s}</td>`).join('')}
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        });
+
+        // POTG from game summary
+        let potgHtml = '';
+        const mvpAward = summary.header?.competitions?.[0]?.status?.type?.state === 'post'
+            ? summary.header?.competitions?.[0]?.competitors : null;
+
+        return `
+            <div style="padding:12px 0;">
+                <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:10px;">📊 Final Box Score</div>
+                ${statsHtml || '<div style="font-size:11px; color:var(--text-tertiary); text-align:center;">No stats available</div>'}
+            </div>
+        `;
     },
 
     createGameCard(game, now) {
@@ -173,6 +420,7 @@ const ui = {
         const clock = game.status?.displayClock || '';
         const period = game.status?.period || 0;
         const date = new Date(game.date);
+        const gameId = game.id;
 
         let statusText = '';
         let isLive = false;
@@ -208,7 +456,7 @@ const ui = {
             ? '<span class="dot pulse" style="display:inline-block;width:7px;height:7px;background:var(--live-color);border-radius:50%;margin-right:6px;vertical-align:middle;"></span>'
             : '';
 
-        // ---- Build quarter scores (linescores) ----
+        // ---- Quarter scores box score ----
         let quarterHtml = '';
         const homeLinescores = home?.linescores || [];
         const awayLinescores = away?.linescores || [];
@@ -248,7 +496,7 @@ const ui = {
             `;
         }
 
-        // ---- Build team leaders section ----
+        // ---- Leaders section ----
         let leadersHtml = '';
         const buildLeaderLine = (competitor) => {
             if (!competitor?.leaders || competitor.leaders.length === 0) return '';
@@ -262,12 +510,10 @@ const ui = {
                     lines.push(`${shortName} ${val} ${label}`);
                 }
             });
-            // Show top 2 leaders max
             return lines.slice(0, 2).join(' · ');
         };
 
         if (state === 'pre') {
-            // Pre-game: show season leaders per team
             const awayLeaders = buildLeaderLine(away);
             const homeLeaders = buildLeaderLine(home);
             if (awayLeaders || homeLeaders) {
@@ -279,7 +525,6 @@ const ui = {
                 `;
             }
         } else if (state === 'in') {
-            // Live: show current game leaders
             const awayLeaders = buildLeaderLine(away);
             const homeLeaders = buildLeaderLine(home);
             if (awayLeaders || homeLeaders) {
@@ -291,7 +536,6 @@ const ui = {
                 `;
             }
         } else if (state === 'post') {
-            // Post-game: Show best performer (rating leader) as POTG
             const allLeaders = [];
             [away, home].forEach(comp => {
                 if (comp?.leaders) {
@@ -302,17 +546,13 @@ const ui = {
                                 name: l.athlete?.shortName || l.athlete?.displayName || '?',
                                 headshot: l.athlete?.headshot || '',
                                 statline: l.displayValue || '',
-                                value: l.value || 0,
-                                teamId: comp.id,
-                                teamAbbr: comp.team?.abbreviation || ''
+                                value: l.value || 0
                             });
                         }
                     });
                 }
             });
-
             if (allLeaders.length > 0) {
-                // Pick the higher rated one
                 allLeaders.sort((a, b) => b.value - a.value);
                 const potg = allLeaders[0];
                 leadersHtml = `
@@ -329,8 +569,21 @@ const ui = {
             }
         }
 
+        // State-based accent bar
+        let accentBar = '';
+        if (state === 'in') {
+            accentBar = 'border-left:3px solid var(--live-color);';
+        } else if (state === 'post') {
+            accentBar = 'border-left:3px solid var(--text-tertiary);';
+        } else {
+            accentBar = 'border-left:3px solid var(--brand-accent);';
+        }
+
+        // Expand hint
+        const expandHint = `<div style="text-align:center; margin-top:8px; font-size:10px; color:var(--text-tertiary); opacity:0.6;">▼ Tap for ${state === 'pre' ? 'preview' : state === 'in' ? 'live stats' : 'box score'}</div>`;
+
         return `
-            <div class="card game-card">
+            <div class="card game-card" data-game-id="${gameId}" data-game-state="${state}" style="cursor:pointer; ${accentBar} transition: all 0.2s ease;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
                     <span style="font-size:12px; font-weight:700; ${statusClass}">
                         ${liveIndicator}${statusText}
@@ -362,6 +615,9 @@ const ui = {
 
                 ${quarterHtml}
                 ${leadersHtml}
+                ${expandHint}
+
+                <div class="game-detail-panel" style="max-height:0; overflow:hidden; transition:max-height 0.35s ease;"></div>
             </div>
         `;
     },
