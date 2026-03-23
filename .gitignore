@@ -1,0 +1,13 @@
+# Local server script
+serve.ps1
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# System
+*.log
