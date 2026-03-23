@@ -177,6 +177,14 @@ const app = {
             const games = await api.fetchScoreboard();
             if (games && games.length) store.setGames(games);
 
+            // If a specific game detail is open, refresh it too
+            if (store.state.activeGameId) {
+                const summary = await api.fetchGameSummary(store.state.activeGameId);
+                if (summary) {
+                    ui.updateGameDetailContent(summary);
+                }
+            }
+
             const hasLive = (games || []).some(g => g.status?.type?.state === 'in');
             const nextDelay = hasLive ? 10000 : 60000;
 

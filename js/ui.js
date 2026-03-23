@@ -23,6 +23,9 @@ const ui = {
                 const tab = e.target.dataset.tab;
                 if (!tab) return;
 
+                // Clear active game detail tracking
+                store.state.activeGameId = null;
+
                 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll(`.nav-btn[data-tab="${tab}"]`).forEach(b => b.classList.add('active'));
 
@@ -165,29 +168,41 @@ const ui = {
 
         container.innerHTML = activeGames.map(game => this.createGameCard(game, now)).join('');
 
-        // Bind click handlers for expand/collapse
+        container.innerHTML = activeGames.map(game => this.createGameCard(game, now)).join('');
+
+        // Bind click handlers
         container.querySelectorAll('.game-card[data-game-id]').forEach(card => {
             card.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const gameId = card.dataset.gameId;
-                const detail = card.querySelector('.game-detail-panel');
-                if (!detail) return;
+                const state = card.dataset.gameState;
 
-                const isOpen = detail.classList.contains('open');
-                // Close all others first
-                container.querySelectorAll('.game-detail-panel.open').forEach(p => {
-                    p.classList.remove('open');
-                    p.style.maxHeight = '0';
-                });
+                // PRE-GAME: Expansion Panel behavior
+                if (state === 'pre') {
+                    const detail = card.querySelector('.game-detail-panel');
+                    if (!detail) return;
 
-                if (!isOpen) {
-                    detail.classList.add('open');
-                    detail.style.maxHeight = detail.scrollHeight + 'px';
+                    const isOpen = detail.classList.contains('open');
+                    // Close all others first
+                    container.querySelectorAll('.game-detail-panel.open').forEach(p => {
+                        p.classList.remove('open');
+                        p.style.maxHeight = '0';
+                    });
 
-                    // If not loaded yet, fetch detail data
-                    if (!detail.dataset.loaded) {
-                        this.loadGameDetail(gameId, detail, card.dataset.gameState);
+                    if (!isOpen) {
+                        detail.classList.add('open');
+                        detail.style.maxHeight = detail.scrollHeight + 'px';
+                        if (!detail.dataset.loaded) {
+                            this.loadGameDetail(gameId, detail, state);
+                        }
+                    } else {
+                        detail.classList.remove('open');
+                        detail.style.maxHeight = '0';
                     }
+                } 
+                // LIVE / POST: Dedicated Page behavior
+                else {
+                    this.renderGameDetail(gameId);
                 }
             });
         });
@@ -400,17 +415,197 @@ const ui = {
             `;
         });
 
-        // POTG from game summary
-        let potgHtml = '';
-        const mvpAward = summary.header?.competitions?.[0]?.status?.type?.state === 'post'
-            ? summary.header?.competitions?.[0]?.competitors : null;
-
         return `
             <div style="padding:12px 0;">
-                <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:10px;">📊 Final Box Score</div>
-                ${statsHtml || '<div style="font-size:11px; color:var(--text-tertiary); text-align:center;">No stats available</div>'}
+                <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                    <span style="width:12px; height:12px; background:var(--success-color); border-radius:3px;"></span>
+                    Final Result
+                </div>
+                ${statsHtml || '<div style="font-size:11px; color:var(--text-tertiary); text-align:center;">Box score unavailable</div>'}
             </div>
         `;
+    },
+
+    // ==================== NEW: DEDICATED GAME DETAIL PAGE ====================
+    async renderGameDetail(gameId) {
+        const pane = document.getElementById('pane-game-detail');
+        if (!pane) return;
+
+        // Save active game ID for polling updates
+        store.state.activeGameId = gameId;
+
+        // Switch panes
+        document.querySelectorAll('.pane').forEach(p => {
+            p.classList.add('hidden');
+            p.classList.remove('active');
+        });
+        pane.classList.remove('hidden');
+        pane.classList.add('active');
+
+        // Initial loading state
+        pane.innerHTML = `
+            <div class="back-bar">
+                <button class="back-btn" onclick="document.querySelector('.nav-btn[data-tab=\\'live\']').click()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    Back to Scores
+                </button>
+            </div>
+            <div style="text-align:center; padding:100px 0;">
+                <div class="dot pulse" style="width:12px; height:12px; background:var(--brand-primary); border-radius:50%; margin: 0 auto 16px;"></div>
+                <div style="font-weight:700; color:var(--text-secondary);">Loading full game details...</div>
+            </div>
+        `;
+
+        const summary = await api.fetchGameSummary(gameId);
+        if (!summary) {
+            pane.innerHTML = '<div style="padding:40px; text-align:center;">Failed to load game summary.</div>';
+            return;
+        }
+
+        this.updateGameDetailContent(summary);
+    },
+
+    updateGameDetailContent(summary) {
+        const pane = document.getElementById('pane-game-detail');
+        if (!pane || pane.classList.contains('hidden')) return;
+
+        const header = summary.header;
+        const competitions = header?.competitions?.[0];
+        const away = competitions?.competitors?.find(c => c.homeAway === 'away');
+        const home = competitions?.competitors?.find(c => c.homeAway === 'home');
+        const status = header?.status;
+        const state = status?.type?.state;
+
+        // Score animation logic
+        const oldAwayScore = pane.querySelector('#detail-score-away')?.textContent;
+        const oldHomeScore = pane.querySelector('#detail-score-home')?.textContent;
+        const awayScoreChanged = oldAwayScore !== undefined && oldAwayScore !== away?.score;
+        const homeScoreChanged = oldHomeScore !== undefined && oldHomeScore !== home?.score;
+
+        const html = `
+            <div class="back-bar">
+                <button class="back-btn" onclick="document.querySelector('.nav-btn[data-tab=\\'live\']').click()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    Back to Scores
+                </button>
+            </div>
+
+            <div class="game-detail-hero">
+                <div class="hero-matchup">
+                    <div class="hero-team">
+                        <img src="${away?.team?.logo}" class="hero-logo-large" alt="${away?.team?.displayName}">
+                        <div class="hero-team-name">${away?.team?.displayName}</div>
+                        <div class="hero-team-record">${away?.record?.[0]?.summary || ''}</div>
+                    </div>
+
+                    <div class="hero-score-box">
+                        <div style="display:flex; justify-content:center; align-items:center; gap:24px;">
+                            <div id="detail-score-away" class="hero-score ${awayScoreChanged ? 'score-animate' : ''}">${away?.score || '0'}</div>
+                            <div style="font-size:24px; font-weight:900; color:var(--text-tertiary); opacity:0.5;">-</div>
+                            <div id="detail-score-home" class="hero-score ${homeScoreChanged ? 'score-animate' : ''}">${home?.score || '0'}</div>
+                        </div>
+                        <div class="hero-status-tag ${state === 'in' ? 'hero-status-live' : ''}">
+                            ${state === 'in' ? '<span class="dot pulse" style="width:6px; height:6px; background:red; display:inline-block; margin-right:6px; vertical-align:middle;"></span>' : ''}
+                            ${status?.type?.detail || 'PRE-GAME'}
+                        </div>
+                    </div>
+
+                    <div class="hero-team">
+                        <img src="${home?.team?.logo}" class="hero-logo-large" alt="${home?.team?.displayName}">
+                        <div class="hero-team-name">${home?.team?.displayName}</div>
+                        <div class="hero-team-record">${home?.record?.[0]?.summary || ''}</div>
+                    </div>
+                </div>
+
+                <div class="game-info-strip">
+                    <div class="info-item">
+                        <div class="info-label">Venue</div>
+                        <div class="info-value">${competitions?.venue?.fullName || 'N/A'}</div>
+                    </div>
+                    ${competitions?.attendance ? `
+                    <div class="info-item">
+                        <div class="info-label">Attendance</div>
+                        <div class="info-value">${competitions.attendance.toLocaleString()}</div>
+                    </div>
+                    ` : ''}
+                    ${competitions?.broadcasts?.length ? `
+                    <div class="info-item">
+                        <div class="info-label">Watch</div>
+                        <div class="info-value">${competitions.broadcasts[0].names?.join(', ') || 'N/A'}</div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+
+            <div class="box-score-container">
+                ${this.buildFullBoxScore(summary)}
+            </div>
+        `;
+
+        pane.innerHTML = html;
+
+        // Remove animation class after it plays
+        setTimeout(() => {
+            pane.querySelectorAll('.score-animate').forEach(el => el.classList.remove('score-animate'));
+        }, 1000);
+    },
+
+    buildFullBoxScore(summary) {
+        const teams = summary.boxscore?.players || [];
+        if (!teams.length) return '<div style="text-align:center; padding:40px; color:var(--text-tertiary);">Box Score Coming Soon</div>';
+
+        return teams.map(teamBlock => {
+            const team = teamBlock.team;
+            const statsGroups = teamBlock.statistics || [];
+            if (statsGroups.length === 0) return '';
+            
+            const stats = statsGroups[0];
+            const athletes = stats.athletes || [];
+            const labels = stats.labels || [];
+
+            return `
+                <div style="margin-bottom:40px;">
+                    <div class="box-score-section-header">
+                        <img src="${team.logo}" style="width:32px; height:32px;">
+                        <h3>${team.displayName} Box Score</h3>
+                    </div>
+                    <div class="box-score-table-wrapper">
+                        <table class="box-score-table">
+                            <thead>
+                                <tr>
+                                    <th class="player-cell">Player</th>
+                                    ${labels.map(l => `<th>${l}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${athletes.map(a => {
+                                    const isStarter = a.starter;
+                                    const statsArray = a.stats || [];
+                                    const ptsIdx = labels.indexOf('PTS');
+                                    const pts = parseFloat(statsArray[ptsIdx]) || 0;
+                                    
+                                    return `
+                                        <tr style="${!isStarter ? 'opacity:0.85;' : ''}">
+                                            <td class="player-cell">
+                                                <div style="display:flex; flex-direction:column;">
+                                                    <span style="font-weight:700;">${a.athlete?.displayName}</span>
+                                                    <span style="font-size:9px; color:var(--text-tertiary); font-weight:600;">${a.athlete?.position?.abbreviation || ''} ${isStarter ? '• STARTER' : ''}</span>
+                                                </div>
+                                            </td>
+                                            ${statsArray.map((s, idx) => {
+                                                const isPts = idx === ptsIdx;
+                                                const isHigh = isPts && pts >= 25;
+                                                return `<td class="${isPts ? 'stat-primary' : ''} ${isHigh ? 'high-stat' : ''}">${s}</td>`;
+                                            }).join('')}
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }).join('');
     },
 
     createGameCard(game, now) {
