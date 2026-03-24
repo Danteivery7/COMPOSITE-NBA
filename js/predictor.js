@@ -31,23 +31,38 @@ const predictor = {
         const playersB = store.state.players.filter(p => String(p.teamId) === String(teamBId));
 
         if (playersA.length > 0 && playersB.length > 0) {
-            // Top 8 rotation impact
             const topA = playersA.slice(0, 8).reduce((sum, p) => sum + (p.rating?.ratingNum || 70), 0) / 8;
             const topB = playersB.slice(0, 8).reduce((sum, p) => sum + (p.rating?.ratingNum || 70), 0) / 8;
             edgeB += (topB - topA) * 0.3;
 
-            // Star power (top 2)
             const starA = playersA.slice(0, 2).reduce((sum, p) => sum + (p.rating?.ratingNum || 70), 0) / 2;
             const starB = playersB.slice(0, 2).reduce((sum, p) => sum + (p.rating?.ratingNum || 70), 0) / 2;
             edgeB += (starB - starA) * 0.1;
         }
+
+        // === Streak / Hotness Factor ===
+        const parseStreak = (streakStr) => {
+            if (!streakStr || streakStr === '--') return 0;
+            const match = streakStr.match(/^([WL])(\d+)$/i);
+            if (!match) return 0;
+            const val = parseInt(match[2]);
+            return match[1].toUpperCase() === 'W' ? val : -val;
+        };
+        const streakA = parseStreak(aStats.streak);
+        const streakB = parseStreak(bStats.streak);
+        // +1.5 per 3 wins, capped at ±5
+        const streakEdgeA = Math.max(-5, Math.min(5, (streakA / 3) * 1.5));
+        const streakEdgeB = Math.max(-5, Math.min(5, (streakB / 3) * 1.5));
+        edgeB += (streakEdgeB - streakEdgeA);
 
         // === Win Probability (Logistic Curve) ===
         let probB = 1 / (1 + Math.pow(10, -edgeB / 30));
         let probA = 1 - probB;
 
         // === Expected Score ===
-        const paceBlend = (parseFloat(aStats.pace) + parseFloat(bStats.pace)) / 2;
+        const paceA = aStats.pace ? parseFloat(aStats.pace) : 98.0;
+        const paceB = bStats.pace ? parseFloat(bStats.pace) : 98.0;
+        const paceBlend = (paceA + paceB) / 2;
         const basePPP = 1.15;
         const pppB = basePPP + (bOffVsADef * 0.003);
         const pppA = basePPP + (aOffVsBDef * 0.003);
@@ -85,6 +100,12 @@ const predictor = {
         if (bOffVsADef > 15) drivers.push(`${teamB.team.abbreviation} offense is elite vs ${teamA.team.abbreviation} defense.`);
         if (aOffVsBDef > 15) drivers.push(`${teamA.team.abbreviation} offense is elite vs ${teamB.team.abbreviation} defense.`);
         if (isHomeB) drivers.push(`Home court advantage (+2.5 pts) for ${teamB.team.abbreviation}.`);
+
+        if (streakEdgeB - streakEdgeA > 1.5) {
+            drivers.push(`${teamB.team.abbreviation} is on a hotter streak (${bStats.streak}), gaining momentum edge.`);
+        } else if (streakEdgeA - streakEdgeB > 1.5) {
+            drivers.push(`${teamA.team.abbreviation} is on a hotter streak (${aStats.streak}), gaining momentum edge.`);
+        }
 
         if (playersA.length > 0 && playersB.length > 0) {
             const topPlayerA = playersA[0];

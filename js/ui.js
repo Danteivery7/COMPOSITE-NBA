@@ -20,41 +20,55 @@ const ui = {
     bindNav() {
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const tab = e.target.dataset.tab;
-                if (!tab) return;
-
-                // Clear active game detail tracking
-                store.state.activeGameId = null;
-
-                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll(`.nav-btn[data-tab="${tab}"]`).forEach(b => b.classList.add('active'));
-
-                document.querySelectorAll('.pane').forEach(p => {
-                    p.classList.remove('active');
-                    p.classList.add('hidden');
-                });
-
-                const pane = document.getElementById(`pane-${tab}`);
-                if (pane) {
-                    pane.classList.remove('hidden');
-                    pane.classList.add('active');
-                }
-
-                // Trigger renders on tab switch
-                if (tab === 'rankings') {
-                    this.renderRankings(store.state.teamRankings);
-                    this.renderPredictorSetup();
-                } else if (tab === 'teams') {
-                    this.renderTeamsList(store.state.teams);
-                } else if (tab === 'players') {
-                    this.renderPlayersList(store.state.players);
-                } else if (tab === 'live') {
-                    this.renderLiveGames(store.state.games);
-                } else if (tab === 'favorites') {
-                    this.renderFavorites();
-                }
+                const tab = e.currentTarget.dataset.tab;
+                if (tab) this.switchTab(tab);
             });
         });
+    },
+
+    switchTab(tabId) {
+        console.log('[UI] Switching to tab:', tabId);
+        
+        // Track the previous pane for back navigation
+        const currentPane = document.querySelector('.pane.active')?.id?.replace('pane-', '');
+        if (currentPane && tabId !== currentPane) {
+            this.previousPane = currentPane;
+        }
+
+        window.scrollTo(0, 0);
+
+        // Clear active game detail tracking if switching away from detail
+        if (tabId !== 'game-detail') store.state.activeGameId = null;
+        if (tabId !== 'team-detail') store.state.activeTeamId = null;
+        if (tabId !== 'player-detail') store.state.activePlayerId = null;
+
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll(`.nav-btn[data-tab="${tabId}"]`).forEach(b => b.classList.add('active'));
+
+        document.querySelectorAll('.pane').forEach(p => {
+            p.classList.remove('active', 'hidden');
+            p.classList.add('hidden');
+        });
+
+        const pane = document.getElementById(`pane-${tabId}`);
+        if (pane) {
+            pane.classList.remove('hidden');
+            pane.classList.add('active');
+        }
+
+        // Trigger renders on tab switch
+        if (tabId === 'rankings') {
+            this.renderRankings(store.state.teamRankings);
+            this.renderPredictorSetup();
+        } else if (tabId === 'teams') {
+            this.renderTeamsList(store.state.teams);
+        } else if (tabId === 'players') {
+            this.renderPlayersList(store.state.players);
+        } else if (tabId === 'live') {
+            this.renderLiveGames(store.state.games);
+        } else if (tabId === 'favorites') {
+            this.renderFavorites();
+        }
     },
 
     bindTheme() {
@@ -434,18 +448,12 @@ const ui = {
         // Save active game ID for polling updates
         store.state.activeGameId = gameId;
 
-        // Switch panes
-        document.querySelectorAll('.pane').forEach(p => {
-            p.classList.add('hidden');
-            p.classList.remove('active');
-        });
-        pane.classList.remove('hidden');
-        pane.classList.add('active');
+        this.switchTab('game-detail');
 
         // Initial loading state
         pane.innerHTML = `
             <div class="back-bar">
-                <button class="back-btn" onclick="document.querySelector('.nav-btn[data-tab=\\'live\']').click()">
+                <button class="back-btn" onclick="ui.switchTab('live')">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Back to Scores
                 </button>
@@ -473,7 +481,7 @@ const ui = {
         const competitions = header?.competitions?.[0];
         const away = competitions?.competitors?.find(c => c.homeAway === 'away');
         const home = competitions?.competitors?.find(c => c.homeAway === 'home');
-        const status = header?.status;
+        const status = competitions?.status || header?.status;
         const state = status?.type?.state;
 
         // Score animation logic
@@ -484,7 +492,7 @@ const ui = {
 
         const html = `
             <div class="back-bar">
-                <button class="back-btn" onclick="document.querySelector('.nav-btn[data-tab=\\'live\']').click()">
+                <button class="back-btn" onclick="ui.switchTab('live')">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Back to Scores
                 </button>
@@ -493,7 +501,7 @@ const ui = {
             <div class="game-detail-hero">
                 <div class="hero-matchup">
                     <div class="hero-team">
-                        <img src="${away?.team?.logo}" class="hero-logo-large" alt="${away?.team?.displayName}">
+                        <img src="${away?.team?.logos?.[0]?.href || away?.team?.logo}" class="hero-logo-large" alt="${away?.team?.displayName}">
                         <div class="hero-team-name">${away?.team?.displayName}</div>
                         <div class="hero-team-record">${away?.record?.[0]?.summary || ''}</div>
                     </div>
@@ -506,12 +514,12 @@ const ui = {
                         </div>
                         <div class="hero-status-tag ${state === 'in' ? 'hero-status-live' : ''}">
                             ${state === 'in' ? '<span class="dot pulse" style="width:6px; height:6px; background:red; display:inline-block; margin-right:6px; vertical-align:middle;"></span>' : ''}
-                            ${status?.type?.detail || 'PRE-GAME'}
+                            ${status?.type?.shortDetail || status?.type?.detail || 'Scheduled'}
                         </div>
                     </div>
 
                     <div class="hero-team">
-                        <img src="${home?.team?.logo}" class="hero-logo-large" alt="${home?.team?.displayName}">
+                        <img src="${home?.team?.logos?.[0]?.href || home?.team?.logo}" class="hero-logo-large" alt="${home?.team?.displayName}">
                         <div class="hero-team-name">${home?.team?.displayName}</div>
                         <div class="hero-team-record">${home?.record?.[0]?.summary || ''}</div>
                     </div>
@@ -520,7 +528,7 @@ const ui = {
                 <div class="game-info-strip">
                     <div class="info-item">
                         <div class="info-label">Venue</div>
-                        <div class="info-value">${competitions?.venue?.fullName || 'N/A'}</div>
+                        <div class="info-value">${summary?.gameInfo?.venue?.fullName || competitions?.venue?.fullName || 'N/A'}</div>
                     </div>
                     ${competitions?.attendance ? `
                     <div class="info-item">
@@ -531,7 +539,7 @@ const ui = {
                     ${competitions?.broadcasts?.length ? `
                     <div class="info-item">
                         <div class="info-label">Watch</div>
-                        <div class="info-value">${competitions.broadcasts[0].names?.join(', ') || 'N/A'}</div>
+                        <div class="info-value">${competitions.broadcasts[0].media?.shortName || competitions.broadcasts[0].names?.join(', ') || 'N/A'}</div>
                     </div>
                     ` : ''}
                 </div>
@@ -566,7 +574,7 @@ const ui = {
             return `
                 <div style="margin-bottom:40px;">
                     <div class="box-score-section-header">
-                        <img src="${team.logo}" style="width:32px; height:32px;">
+                        <img src="${team.logos?.[0]?.href || team.logo}" style="width:32px; height:32px;">
                         <h3>${team.displayName} Box Score</h3>
                     </div>
                     <div class="box-score-table-wrapper">
@@ -585,7 +593,7 @@ const ui = {
                                     const pts = parseFloat(statsArray[ptsIdx]) || 0;
                                     
                                     return `
-                                        <tr style="${!isStarter ? 'opacity:0.85;' : ''}">
+                                        <tr style="cursor:pointer; ${!isStarter ? 'opacity:0.85;' : ''}" onclick="ui.showPlayerDetail('${a.athlete?.id}')">
                                             <td class="player-cell">
                                                 <div style="display:flex; flex-direction:column;">
                                                     <span style="font-weight:700;">${a.athlete?.displayName}</span>
@@ -870,16 +878,17 @@ const ui = {
     },
 
     // ==================== TEAM DETAIL ====================
-    showTeamDetail(teamId) {
+    async showTeamDetail(teamId) {
+        console.log('[UI] Showing team detail:', teamId);
         const team = store.state.teams.find(t => String(t.id) === String(teamId));
         const stats = store.state.teamStats[teamId];
         if (!team) return;
 
         const adv = stats ? models.generateAdvancedTeamStats(stats) : null;
+
         const rosterObj = store.state.rosters[teamId] || { athletes: [], coach: 'N/A' };
         const coachName = rosterObj.coach;
 
-        // Use team rankings data for OFF/DEF (which are now player-derived)
         const rankData = store.state.teamRankings.find(r => String(r.id) === String(teamId));
         const displayStats = rankData ? rankData.stats : adv;
 
@@ -890,80 +899,46 @@ const ui = {
 
         const statsHtml = displayStats ? `
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:28px;">
-                <div class="card stat-card">
-                    <div class="stat-label">Record</div>
-                    <div class="stat-value">${displayStats.wins}-${displayStats.losses}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">PPG</div>
-                    <div class="stat-value" style="color:var(--success-color);">${displayStats.ppg?.toFixed?.(1) || displayStats.ppg || '--'}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">OPP PPG</div>
-                    <div class="stat-value" style="color:var(--live-color);">${displayStats.oppPpg?.toFixed?.(1) || displayStats.oppPpg || '--'}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">OVR</div>
-                    <div class="stat-value" style="color:var(--brand-accent);">${displayStats.ovrRating}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">OFF</div>
-                    <div class="stat-value">${displayStats.offRating}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">DEF</div>
-                    <div class="stat-value">${displayStats.defRating}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">Net RTG</div>
-                    <div class="stat-value" style="color:${displayStats.netRtg >= 0 ? 'var(--success-color)' : 'var(--live-color)'};">${displayStats.netRtg >= 0 ? '+' : ''}${displayStats.netRtg?.toFixed?.(1) || displayStats.netRtg || '--'}</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-label">Streak</div>
-                    <div class="stat-value">${displayStats.streak || '--'}</div>
-                </div>
+                <div class="card stat-card"><div class="stat-label">Record</div><div class="stat-value">${displayStats.wins}-${displayStats.losses}</div></div>
+                <div class="card stat-card"><div class="stat-label">PPG</div><div class="stat-value" style="color:var(--success-color);">${displayStats.ppg?.toFixed?.(1) || displayStats.ppg || '--'}</div></div>
+                <div class="card stat-card"><div class="stat-label">OPP PPG</div><div class="stat-value" style="color:var(--live-color);">${displayStats.oppPpg?.toFixed?.(1) || displayStats.oppPpg || '--'}</div></div>
+                <div class="card stat-card"><div class="stat-label">OVR</div><div class="stat-value" style="color:var(--brand-accent);">${displayStats.ovrRating}</div></div>
+                <div class="card stat-card"><div class="stat-label">OFF</div><div class="stat-value">${displayStats.offRating}</div></div>
+                <div class="card stat-card"><div class="stat-label">DEF</div><div class="stat-value">${displayStats.defRating}</div></div>
+                <div class="card stat-card"><div class="stat-label">Net RTG</div><div class="stat-value" style="color:${displayStats.netRtg >= 0 ? 'var(--success-color)' : 'var(--live-color)'};">${displayStats.netRtg >= 0 ? '+' : ''}${displayStats.netRtg?.toFixed?.(1) || displayStats.netRtg || '--'}</div></div>
+                <div class="card stat-card"><div class="stat-label">Streak</div><div class="stat-value">${displayStats.streak || '--'}</div></div>
             </div>
         ` : '<div class="card" style="padding:20px; text-align:center; color:var(--text-secondary);">Team stats loading...</div>';
 
         container.innerHTML = `
-            <div class="pane-header" style="justify-content:flex-start; gap:20px;">
-                <button class="back-btn" onclick="document.querySelector('.nav-btn[data-tab=\\'teams\\']').click()">← Back</button>
-                <div style="display:flex; align-items:center; gap:14px;">
-                    <img src="${team.logos?.[0]?.href || ''}" width="48" height="48" style="border-radius:8px;">
-                    <div>
-                        <h2 style="font-size:20px;">${team.displayName}</h2>
-                        <div style="font-size:12px; color:var(--text-secondary);">Coach: ${coachName}</div>
+            <div class="pane-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
+                <div style="display:flex; align-items:center; gap:20px;">
+                    <button class="back-btn" onclick="ui.switchTab(ui.previousPane || 'teams')">← Back</button>
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <img src="${team.logos?.[0]?.href || ''}" width="48" height="48" style="border-radius:8px;">
+                        <div>
+                            <h2 style="font-size:20px;">${team.displayName}</h2>
+                            <div style="font-size:12px; color:var(--text-secondary);">Coach: ${coachName}</div>
+                        </div>
                     </div>
                 </div>
+                <button class="action-btn" onclick="store.toggleFavorite('team', '${team.id}'); ui.showTeamDetail('${team.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
+                    ${store.state.favorites.teams.includes(String(team.id)) ? '⭐ Favorited' : '☆ Favorite'}
+                </button>
             </div>
-
             ${statsHtml}
-
             <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:14px;">
                 <h3 style="font-size:16px; font-weight:700;">Roster <span style="color:var(--text-tertiary); font-weight:500; font-size:13px;">(${roster.length} players)</span></h3>
             </div>
             <div class="table-container">
                 <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Player</th>
-                            <th>Pos</th>
-                            <th>OVR</th>
-                            <th>OFF</th>
-                            <th>DEF</th>
-                            <th>PTS</th>
-                            <th>REB</th>
-                            <th>AST</th>
-                            <th>GP</th>
-                            <th>Tier</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>OFF</th><th>DEF</th><th>PTS</th><th>REB</th><th>AST</th><th>GP</th><th>Tier</th></tr></thead>
                     <tbody>
                         ${roster.map(p => `
-                            <tr>
+                            <tr style="cursor:pointer;" onclick="ui.showPlayerDetail('${p.id}')">
                                 <td>
                                     <div style="display:flex; align-items:center; gap:10px;">
-                                        <img src="${p.headshot?.href || ''}" width="30" height="30" style="border-radius:50%; background:var(--bg-elevated); object-fit:cover; flex-shrink:0;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 30 30%22><rect fill=%22%23232836%22 width=%2230%22 height=%2230%22 rx=%2215%22/></svg>'">
+                                        <img src="${p.headshot?.href || ''}" width="30" height="30" style="border-radius:50%; background:var(--bg-elevated); object-fit:cover; flex-shrink:0;">
                                         <span style="font-weight:600; font-size:13px;">${p.fullName || p.displayName || 'Unknown'}</span>
                                     </div>
                                 </td>
@@ -971,10 +946,7 @@ const ui = {
                                 <td style="font-weight:700; color:var(--brand-accent);">${p.rating?.rating || '--'}</td>
                                 <td style="font-size:12px; color:var(--success-color);">${p.rating?.offRating || '--'}</td>
                                 <td style="font-size:12px; color:var(--info-color, #5bc0de);">${p.rating?.defRating || '--'}</td>
-                                <td style="font-variant-numeric:tabular-nums;">${p.rating?.pts || '--'}</td>
-                                <td style="font-variant-numeric:tabular-nums;">${p.rating?.reb || '--'}</td>
-                                <td style="font-variant-numeric:tabular-nums;">${p.rating?.ast || '--'}</td>
-                                <td style="font-variant-numeric:tabular-nums;">${p.rating?.gp || '--'}</td>
+                                <td>${p.rating?.pts || '--'}</td><td>${p.rating?.reb || '--'}</td><td>${p.rating?.ast || '--'}</td><td>${p.rating?.gp || '--'}</td>
                                 <td><span class="badge ${this.getBadgeClass(p.rating?.rating)}">${this.getBadgeLabel(p.rating?.rating)}</span></td>
                             </tr>
                         `).join('')}
@@ -984,15 +956,173 @@ const ui = {
             <div style="margin-top:16px; font-size:11px; color:var(--text-tertiary); text-align:center;">
                 Player stats sync via ESPN APIs. ${roster.filter(p => p.rating?.hasRealStats).length}/${roster.length} players with real-time stats.
             </div>
+            <div id="team-schedule-container" style="margin-top:28px;"></div>
         `;
 
-        // Switch panes
-        document.querySelectorAll('.pane').forEach(p => {
-            p.classList.remove('active');
-            p.classList.add('hidden');
-        });
-        container.classList.remove('hidden');
-        container.classList.add('active');
+        this.switchTab('team-detail');
+        const scheduleContainer = document.getElementById('team-schedule-container');
+        try {
+            const schedule = await api.fetchTeamSchedule(teamId);
+            if (schedule && schedule.length > 0 && scheduleContainer) {
+                scheduleContainer.innerHTML = `
+                    <h3 style="font-size:16px; font-weight:700; margin-bottom:12px;">Last 5 Games</h3>
+                    <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:8px;">
+                        ${schedule.map(game => {
+                            const comp = game.competitions[0];
+                            const us = comp.competitors.find(c => c.team.id === String(teamId));
+                            const opp = comp.competitors.find(c => c.team.id !== String(teamId));
+                            if (!us || !opp) return '';
+                            const isWin = us.winner;
+                            const isHome = us.homeAway === 'home';
+                            return `
+                                <div class="card" style="min-width:140px; padding:12px; flex-shrink:0;">
+                                    <div style="font-size:11px; color:var(--text-secondary); margin-bottom:8px;">${new Date(game.date).toLocaleDateString(undefined, {month:'short', day:'numeric'})} • ${isHome ? 'vs' : '@'} ${opp.team.abbreviation}</div>
+                                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                                        <img src="${opp.team?.logos?.[0]?.href || opp.team?.logo}" width="24" height="24">
+                                        <div style="font-weight:700; font-size:14px;">${us.score?.displayValue || us.score?.value} - ${opp.score?.displayValue || opp.score?.value}</div>
+                                    </div>
+                                    <div style="margin-top:8px; font-size:11px; font-weight:700; color:${isWin ? 'var(--success-color)' : 'var(--live-color)'}; text-transform:uppercase;">${isWin ? 'W' : 'L'}</div>
+                                </div>`;
+                        }).join('')}
+                    </div>`;
+            }
+        } catch (e) { console.error('Failed to load schedule', e); }
+    },
+
+    // ==================== PLAYER DETAIL ====================
+    async showPlayerDetail(playerId) {
+        try {
+            console.log('showPlayerDetail called for:', playerId);
+            const p = store.state.players.find(x => String(x.id) === String(playerId));
+            if (!p) {
+                console.error('Player not found in store.state.players!', playerId);
+                return;
+            }
+            if (!p.rating) {
+            console.warn('Player rating is missing! Attempting to generate on the fly...');
+            const rosterAthlete = store.state.rosters[p.teamId]?.athletes?.find(a => String(a.id) === String(playerId));
+            if (rosterAthlete) {
+                p.rating = models.generatePlayerRating(rosterAthlete, store.state.teamStats[p.teamId]);
+            }
+        }
+        
+        const team = store.state.teams.find(t => String(t.id) === String(p.teamId));
+        const s = p.rating || { ratingNum: 0, offRating: "0", defRating: "0", pts: "0", reb: "0", ast: "0", stl: "0", blk: "0", gp: 0, mpg: "0" };
+        const container = document.getElementById('pane-player-detail');
+
+        // AI specific analysis generation based on live stats
+        let aiAnalysis = '';
+        if (s.gp === 0) {
+            aiAnalysis = `${p.fullName || p.displayName} has not played any games this season. His current rating is a conservative baseline proxy until he logs minimum minutes.`;
+        } else {
+            const strengths = [];
+            const weaknesses = [];
+
+            if (s.ratingNum >= 90) strengths.push('is performing at an MVP-caliber level');
+            else if (s.ratingNum >= 86) strengths.push('is an elite All-Star talent');
+            else if (s.ratingNum >= 80) strengths.push('is a highly impactful core rotation player');
+
+            if (parseFloat(s.offRating) >= 85) strengths.push('an offensive engine');
+            if (parseFloat(s.defRating) >= 85) strengths.push('a lockdown defensive anchor');
+
+            if (parseFloat(s.pts) >= 24) strengths.push(`an elite scorer (${s.pts} PPG)`);
+            if (parseFloat(s.ast) >= 7) strengths.push(`a premier playmaker (${s.ast} APG)`);
+            if (parseFloat(s.reb) >= 10) strengths.push(`dominant on the glass (${s.reb} RPG)`);
+
+            if (s.offRating < 70) weaknesses.push('offensive consistency');
+            if (s.defRating < 72) weaknesses.push('defensive impact');
+            if (s.tsPct < 52 && s.pts > 10) weaknesses.push('scoring efficiency');
+
+            let strText = strengths.length > 0 ? strengths.join(', ') : 'a solid contributor';
+            let wkText = weaknesses.length > 0 ? ` However, advanced metrics suggest room for improvement regarding ${weaknesses.join(' and ')}.` : '';
+
+            aiAnalysis = `Composite AI Analysis: Based on real-time data from the current season (${s.gp} games played), ${p.fullName || p.displayName} ${strText}.${wkText} His overall impact score reflects a dynamic ${s.posAbbrev} for the ${team ? team.displayName : 'team'}.`;
+        }
+
+        const isFav = (store.state.favorites.players || []).includes(String(p.id));
+
+        container.innerHTML = `
+            <div class="pane-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
+                <button class="back-btn" onclick="ui.switchTab(ui.previousPane || 'players')">← Back</button>
+                <button class="action-btn" onclick="store.toggleFavorite('player', '${p.id}'); ui.showPlayerDetail('${p.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
+                    ${isFav ? '⭐ Favorited' : '☆ Favorite'}
+                </button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:300px 1fr; gap:32px; align-items:start;">
+                <!-- 2K Style Card -->
+                <div style="background: linear-gradient(135deg, rgba(20,24,36,1) 0%, rgba(30,35,50,1) 100%); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:24px; position:relative; box-shadow:0 20px 40px rgba(0,0,0,0.5); overflow:hidden;">
+                    <div style="position:absolute; top:-20px; right:-20px; opacity:0.05; filter:grayscale(100%);">
+                        <img src="${team?.logos?.[0]?.href || ''}" width="200" height="200">
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; position:relative; z-index:2;">
+                        <div>
+                            <div style="font-size:48px; font-weight:900; line-height:1; color:${(s.ratingNum || 0) >= 90 ? '#f1c40f' : (s.ratingNum || 0) >= 80 ? '#3498db' : '#95a5a6'}; text-shadow: 0 4px 12px rgba(0,0,0,0.5);">${(s.ratingNum || 0).toFixed(1)}</div>
+                            <div style="font-size:12px; font-weight:800; color:var(--text-secondary); letter-spacing:1px; text-transform:uppercase; margin-top:4px;">OVERALL</div>
+                            <div style="display:inline-block; margin-top:12px; padding:4px 10px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; font-size:10px; font-weight:800; color:#fff; text-transform:uppercase; letter-spacing:1px;">${s.archetype || 'Role Player'}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:24px; font-weight:800; color:var(--text-secondary);">${s.posAbbrev || p.position?.abbreviation || '--'}</div>
+                            <img src="${team?.logos?.[0]?.href || ''}" width="36" height="36" style="margin-top:8px;">
+                        </div>
+                    </div>
+
+                    <div style="text-align:center; position:relative; z-index:2; margin:20px 0;">
+                        <img src="${p.headshot?.href || ''}" width="180" height="130" style="object-fit:contain; filter:drop-shadow(0 10px 15px rgba(0,0,0,0.5));" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 30 30%22><rect fill=%22transparent%22 width=%2230%22 height=%2230%22/></svg>'">
+                    </div>
+
+                    <div style="text-align:center; position:relative; z-index:2; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
+                        <h2 style="font-size:22px; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px;">${p.fullName || p.displayName}</h2>
+                        <div style="display:flex; justify-content:space-around; background:rgba(0,0,0,0.3); border-radius:8px; padding:12px;">
+                            <div>
+                                <div style="font-size:18px; font-weight:800; color:var(--success-color);">${s.offRating}</div>
+                                <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase;">OFF</div>
+                            </div>
+                            <div style="width:1px; background:rgba(255,255,255,0.1);"></div>
+                            <div>
+                                <div style="font-size:18px; font-weight:800; color:var(--info-color, #5bc0de);">${s.defRating}</div>
+                                <div style="font-size:10px; color:var(--text-tertiary); text-transform:uppercase;">DEF</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats & Analysis -->
+                <div>
+                    <!-- AI Analysis Box -->
+                    <div style="background:var(--bg-elevated); border-left:4px solid var(--brand-accent); padding:20px; border-radius:0 8px 8px 0; margin-bottom:32px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-accent)" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                            <span style="font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:var(--brand-accent);">Composite AI Report</span>
+                        </div>
+                        <p style="font-size:15px; line-height:1.6; color:var(--text-secondary); margin:0;">${aiAnalysis}</p>
+                    </div>
+
+                    <h3 style="font-size:16px; font-weight:700; margin-bottom:16px;">Current Season Stats</h3>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:12px;">
+                        <div class="card stat-card"><div class="stat-label">PPG</div><div class="stat-value">${s.pts || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">RPG</div><div class="stat-value">${s.reb || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">APG</div><div class="stat-value">${s.ast || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">SPG</div><div class="stat-value">${s.stl || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">BPG</div><div class="stat-value">${s.blk || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">FG%</div><div class="stat-value">${s.fgPct || '--'}${s.fgPct ? '%' : ''}</div></div>
+                        <div class="card stat-card"><div class="stat-label">3P%</div><div class="stat-value">${s.threePct || '--'}${s.threePct ? '%' : ''}</div></div>
+                        <div class="card stat-card"><div class="stat-label">eFG%</div><div class="stat-value">${s.efgPct || '--'}${s.efgPct ? '%' : ''}</div></div>
+                        <div class="card stat-card"><div class="stat-label">TS%</div><div class="stat-value">${s.tsPct || '--'}${s.tsPct ? '%' : ''}</div></div>
+                        <div class="card stat-card"><div class="stat-label">PER</div><div class="stat-value">${s.per || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">MPG</div><div class="stat-value">${s.mpg || '--'}</div></div>
+                        <div class="card stat-card"><div class="stat-label">GP</div><div class="stat-value">${s.gp !== undefined ? s.gp : '--'}</div></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.switchTab('player-detail');
+        } catch (e) {
+            console.error('[UI] Error in showPlayerDetail:', e);
+            toast.show('Error loading player details', 'error');
+        }
     },
 
     // ==================== PLAYERS LIST (ALL) ====================
@@ -1035,7 +1165,7 @@ const ui = {
         this.populateTeamFilter();
 
         tbody.innerHTML = display.map((p, i) => `
-            <tr>
+            <tr style="cursor:pointer;" onclick="ui.showPlayerDetail('${p.id}')">
                 <td style="font-weight:800; color:var(--text-tertiary); width:36px; font-variant-numeric:tabular-nums;">${i + 1}</td>
                 <td>
                     <div style="display:flex; align-items:center; gap:10px;">
@@ -1103,8 +1233,8 @@ const ui = {
         const container = document.getElementById('favorites-container');
         if (!container) return;
 
-        const favTeams = store.state.favorites.teams;
-        const favPlayers = store.state.favorites.players;
+        const favTeams = store.state.favorites.teams || [];
+        const favPlayers = store.state.favorites.players || [];
 
         if (favTeams.length === 0 && favPlayers.length === 0) {
             container.innerHTML = '<div class="card" style="padding:40px; text-align:center; color:var(--text-secondary);"><div style="font-size:40px; margin-bottom:12px;">⭐</div>No favorites yet. Star teams and players to see them here.</div>';
@@ -1113,18 +1243,41 @@ const ui = {
 
         let html = '';
         if (favTeams.length > 0) {
-            html += '<h3 style="margin-bottom:12px; font-weight:700;">Favorite Teams</h3><div class="teams-grid" style="margin-bottom:24px;">';
+            html += '<h3 style="margin-bottom:16px; font-weight:700;">Favorite Teams</h3><div class="teams-grid" style="margin-bottom:32px;">';
             favTeams.forEach(tid => {
                 const team = store.state.teams.find(t => String(t.id) === String(tid));
+                const rankData = store.state.teamRankings.find(r => String(r.id) === String(tid));
                 if (team) {
-                    html += `<div class="card team-card" onclick="ui.showTeamDetail('${team.id}')">
-                        <img src="${team.logos?.[0]?.href || ''}" width="40" height="40">
-                        <span style="font-weight:600;">${team.displayName}</span>
+                    const stats = rankData ? rankData.stats : null;
+                    html += `
+                    <div class="card team-card" onclick="ui.showTeamDetail('${team.id}')" style="display:flex; flex-direction:column; align-items:center;">
+                        <img src="${team.logos?.[0]?.href || ''}" width="56" height="56" style="margin-bottom:12px;">
+                        <span style="font-weight:700; font-size:16px; margin-bottom:4px;">${team.displayName}</span>
+                        ${stats ? `<div style="font-size:12px; color:var(--text-secondary);">${stats.wins}-${stats.losses} • <span style="color:var(--brand-accent); font-weight:700;">${stats.ovrRating} OVR</span></div>` : ''}
                     </div>`;
                 }
             });
             html += '</div>';
         }
+
+        if (favPlayers.length > 0) {
+            html += '<h3 style="margin-bottom:16px; font-weight:700;">Favorite Players</h3><div class="teams-grid" style="margin-bottom:32px; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));">';
+            favPlayers.forEach(pid => {
+                const p = store.state.players.find(x => String(x.id) === String(pid));
+                if (p && p.rating) {
+                    const s = p.rating;
+                    html += `
+                    <div class="card team-card" onclick="ui.showPlayerDetail('${p.id}')" style="display:flex; flex-direction:column; align-items:center; position:relative;">
+                        <div style="position:absolute; top:12px; right:12px; font-size:18px; font-weight:900; color:${s.rating >= 90 ? '#f1c40f' : s.rating >= 80 ? '#3498db' : 'var(--text-secondary)'};">${s.rating}</div>
+                        <img src="${p.headshot?.href || ''}" width="80" height="60" style="object-fit:contain; margin-bottom:12px;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 30 30%22><rect fill=%22transparent%22 width=%2230%22 height=%2230%22/></svg>'">
+                        <span style="font-weight:700; font-size:14px; text-align:center;">${p.fullName || p.displayName}</span>
+                        <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">${s.posAbbrev || '--'}</div>
+                    </div>`;
+                }
+            });
+            html += '</div>';
+        }
+        
         container.innerHTML = html;
     },
 

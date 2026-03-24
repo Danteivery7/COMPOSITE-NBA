@@ -49,6 +49,9 @@ const store = {
 
         document.body.setAttribute('data-theme', this.state.settings.theme);
 
+        // Force clear cache once to ensure new rating algorithms run
+        localStorage.removeItem('nbaCompCache');
+
         // Load cached data for INSTANT page load
         this.loadCache();
     },
@@ -61,6 +64,20 @@ const store = {
         this.listeners.forEach(cb => {
             try { cb(key, this.state); } catch(e) { console.error('Store listener error:', e); }
         });
+    },
+
+    toggleFavorite(type, id) {
+        if (!this.state.favorites.teams) this.state.favorites.teams = [];
+        if (!this.state.favorites.players) this.state.favorites.players = [];
+        const list = type === 'team' ? this.state.favorites.teams : this.state.favorites.players;
+        const idx = list.indexOf(String(id));
+        if (idx === -1) {
+            list.push(String(id));
+        } else {
+            list.splice(idx, 1);
+        }
+        localStorage.setItem('nbaCompFavs', JSON.stringify(this.state.favorites));
+        this.notify('favorites');
     },
 
     // ==================== DATA CACHE (localStorage) ====================

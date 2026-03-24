@@ -76,20 +76,34 @@ const api = {
     },
 
     /**
+     * Helper to get the correct NBA season year.
+     * Often ESPN's core API 404s for the 'future' year during the transition.
+     */
+    getSeasonYear() {
+        const d = new Date();
+        const year = d.getFullYear();
+        // If we are in Jan-Sept, it's the current year's season. 
+        // If Oct-Dec, it's the next year's.
+        return d.getMonth() >= 9 ? year + 1 : year;
+    },
+
+    /**
      * Fetch individual player season stats from ESPN Core API.
      * Captures ALL available stats for the comprehensive rating system.
      */
     async fetchPlayerStats(playerId) {
         try {
-            const currentYear = new Date().getFullYear();
-            const seasonYear = new Date().getMonth() >= 9 ? currentYear + 1 : currentYear;
+            let seasonYear = this.getSeasonYear();
 
             let statsRes = await fetch(
                 `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear}/types/2/athletes/${playerId}/statistics`
             );
+
+            // Fallback to previous year if current one fails (common during season transitions/late updates)
             if (!statsRes.ok) {
+                seasonYear--;
                 statsRes = await fetch(
-                    `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear - 1}/types/2/athletes/${playerId}/statistics`
+                    `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear}/types/2/athletes/${playerId}/statistics`
                 );
             }
 
@@ -196,12 +210,19 @@ const api = {
      */
     async fetchTeamStatistics(teamId) {
         try {
-            const currentYear = new Date().getFullYear();
-            const seasonYear = new Date().getMonth() >= 9 ? currentYear + 1 : currentYear;
+            let seasonYear = this.getSeasonYear();
 
-            const res = await fetch(
+            let res = await fetch(
                 `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear}/types/2/teams/${teamId}/statistics`
             );
+
+            if (!res.ok) {
+                seasonYear--;
+                res = await fetch(
+                    `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear}/types/2/teams/${teamId}/statistics`
+                );
+            }
+
             if (!res.ok) return null;
 
             const data = await res.json();
@@ -298,6 +319,37 @@ const api = {
         }
 
         return results;
+    },
+
+    /**
+     * Fetch the schedule for a specific team (last 5 games)
+     */
+    async fetchTeamSchedule(teamId) {
+        try {
+            let seasonYear = this.getSeasonYear();
+
+            // Using ESPN's team events endpoint
+            let res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${teamId}/schedule?season=${seasonYear}`);
+            
+            if (!res.ok) {
+                seasonYear--;
+                res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${teamId}/schedule?season=${seasonYear}`);
+            }
+
+            if (!res.ok) return [];
+
+            const data = await res.json();
+            if (!data.events) return [];
+
+            // Filter for completed games
+            const completedEvents = data.events.filter(e => e.competitions[0].status.type.completed);
+
+            // Return the 5 most recent completed games
+            return completedEvents.slice(-5).reverse(); // Reverse so most recent is first
+        } catch (error) {
+            console.error(`[API] Error fetching schedule for team ${teamId}:`, error);
+            return [];
+        }
     }
 };
 

@@ -37,19 +37,29 @@ const models = {
     },
 
     /**
-     * Compute league-wide min/max for all stat keys from all players with real stats.
-     * This MUST be called before computing any ratings.
+     * Compute league-wide and role-specific min/max for all stat keys from all players with real stats.
      */
     computeLeagueStats() {
         const rosters = store.state.rosters;
         const allStats = [];
+        const roleStatsMap = { guard: [], wing: [], big: [] };
 
         Object.keys(rosters).forEach(teamId => {
             const roster = rosters[teamId];
             if (!roster || !roster.athletes) return;
             roster.athletes.forEach(a => {
-                if (a.realStats && a.realStats.gp > 0 && a.realStats.mpg >= 5) {
+                // Strict 20 Games Played requirement for league normalization to avoid outliers
+                if (a.realStats && a.realStats.gp >= 20 && a.realStats.mpg >= 10) {
                     allStats.push(a.realStats);
+                    
+                    const posAbbrev = a.position?.abbreviation || 'G';
+                    const posName = a.position?.name || '';
+                    let archetype = 'wing';
+                    if (/^(PG|SG|G)$/i.test(posAbbrev) || /Guard/i.test(posName)) archetype = 'guard';
+                    else if (/^(PF|C)$/i.test(posAbbrev) || /Center/i.test(posName)) archetype = 'big';
+                    else if (/^(SF|F|G-F|F-G)$/i.test(posAbbrev) || /Forward/i.test(posName)) archetype = 'wing';
+                    
+                    roleStatsMap[archetype].push(a.realStats);
                 }
             });
         });
@@ -57,21 +67,30 @@ const models = {
         if (allStats.length < 10) return; // Not enough data
 
         const keys = Object.keys(allStats[0] || {});
-        const league = {};
+        
+        const buildBounds = (statsArray) => {
+            const bounds = {};
+            keys.forEach(key => {
+                const values = statsArray.map(s => s[key]).filter(v => typeof v === 'number' && !isNaN(v));
+                if (values.length < 5) return;
+                const w = this.winsorize(values);
+                bounds[key] = {
+                    min: w.min,
+                    max: w.max,
+                    avg: values.reduce((s, v) => s + v, 0) / values.length,
+                    stdDev: Math.sqrt(values.reduce((sq, v) => sq + Math.pow(v - (values.reduce((s, x) => s + x, 0) / values.length), 2), 0) / values.length) || 1
+                };
+            });
+            return bounds;
+        };
 
-        keys.forEach(key => {
-            const values = allStats.map(s => s[key]).filter(v => typeof v === 'number' && !isNaN(v));
-            if (values.length < 5) return;
-            const w = this.winsorize(values);
-            league[key] = {
-                min: w.min,
-                max: w.max,
-                avg: values.reduce((s, v) => s + v, 0) / values.length
-            };
-        });
-
-        store.state.leagueStats = league;
-        console.log(`[Models] League stats computed from ${allStats.length} players, ${Object.keys(league).length} metrics.`);
+        store.state.leagueStats = buildBounds(allStats);
+        store.state.roleStats = {
+            guard: buildBounds(roleStatsMap.guard),
+            wing: buildBounds(roleStatsMap.wing),
+            big: buildBounds(roleStatsMap.big)
+        };
+        console.log(`[Models] League & Role stats computed from ${allStats.length} players.`);
     },
 
     /** Get normalized value for a stat, using league min/max */
@@ -79,6 +98,29 @@ const models = {
         const ls = store.state.leagueStats[key];
         if (!ls) return 0.5; // Fallback if no league data
         return inverse ? this.normInverse(value, ls.min, ls.max) : this.norm(value, ls.min, ls.max);
+    },
+
+    /** Get normalized value for a stat against a specific role */
+    normRole(value, key, role, inverse = false) {
+        const rs = store.state.roleStats?.[role]?.[key];
+        if (!rs) return 0.5;
+        return inverse ? this.normInverse(value, rs.min, rs.max) : this.norm(value, rs.min, rs.max);
+    },
+
+    /** Fair normalization (0.6 role + 0.4 league) */
+    normFair(value, key, role, inverse = false) {
+        const nr = this.normRole(value, key, role, inverse);
+        const nl = this.normStat(value, key, inverse);
+        return (0.60 * nr) + (0.40 * nl);
+    },
+
+    /** Fair normalization for derived stats */
+    normFairDerived(value, mixMin, mixMax, roleMin, roleMax) {
+        // approximate role vs league bounds for derived stats manually if needed
+        // but simple way:
+        const nl = this.norm(value, mixMin, mixMax);
+        const nr = this.norm(value, roleMin, roleMax);
+        return (0.60 * nr) + (0.40 * nl);
     },
 
     /** Normalize a derived stat directly using provided min/max bounds */
@@ -101,8 +143,8 @@ const models = {
         const astComponent = (s.apg || 0) * 0.08;  // playmaking adds to BPM
         const scoringComponent = (s.ppg || 0) * 0.02;  // scoring volume
         let bpm = perComponent + pmComponent + tsComponent + astComponent + scoringComponent;
-        // Centers get PER inflated by rebounds — slight correction
-        if (archetype === 'big') bpm *= 0.88;
+        // Centers get PER inflated by rebounds — position correction
+        if (archetype === 'big') bpm *= 0.65;
         return bpm;
     },
 
@@ -207,165 +249,266 @@ const models = {
         const gpPct = Math.min(s.gp / teamGP, 1);
         const gsPct = s.gp > 0 ? s.gs / s.gp : 0;
 
-        // ------ PLAYER OFFENSIVE RATING (Section 15) ------
-        // A) Scoring Volume
-        const scoringVolume = 100 * (
-            0.45 * this.normStat(s.ppg, 'ppg') +
-            0.35 * this.normStat(ptsPer75, 'ppg') +  // approx with ppg bounds
-            0.20 * this.normStat(s.usage || 20, 'usage')
+        // ------ PLAYER OFFENSIVE RATING ------
+        // A) Shot Creation
+        const shotCreation = 100 * (
+            0.40 * this.normFair(s.ppg, 'ppg', archetype) +
+            0.35 * this.normFair(ptsPer75, 'ppg', archetype) +
+            0.25 * this.normFair(s.usage || 20, 'usage', archetype)
         );
 
-        // B) Scoring Efficiency
-        const scoringEfficiency = 100 * (
-            0.40 * this.normStat(s.tsPct || 55, 'tsPct') +
-            0.25 * this.normStat(s.efgPct || 50, 'efgPct') +
-            0.20 * this.normStat(s.threePct || 0, 'threePct') +
-            0.15 * this.normStat(ftRate, 'fta')  // use fta as proxy
+        // B) Efficiency
+        const efficiency = 100 * (
+            0.40 * this.normFair(s.tsPct || 55, 'tsPct', archetype) +
+            0.25 * this.normFair(s.efgPct || 50, 'efgPct', archetype) +
+            0.20 * this.normFair(s.threePct || 0, 'threePct', archetype) +
+            0.15 * this.normFair(ftRate, 'fta', archetype)
         );
 
         // C) Playmaking
         const playmaking = 100 * (
-            0.35 * this.normStat(s.apg, 'apg') +
-            0.25 * this.normStat(astPer75, 'apg') +
-            0.25 * this.normStat(astPct, 'assistRatio') +
-            0.15 * this.normStat(s.astTovRatio || 0, 'astTovRatio')
+            0.30 * this.normFair(s.apg, 'apg', archetype) +
+            0.25 * this.normFair(astPer75, 'apg', archetype) +
+            0.25 * this.normFair(astPct, 'assistRatio', archetype) +
+            0.20 * this.normFair(s.astTovRatio || 0, 'astTovRatio', archetype)
         );
 
-        // D) Offensive Impact — use derived stat bounds directly
-        const offImpact = 100 * (
-            0.50 * this.normDerived(obpm, -3, 8) +      // typical BPM range
-            0.50 * this.normDerived(offWS, -0.5, 6)     // typical OWS range
-        );
-
-        // E) Ball Security
+        // D) Ball Security
         const ballSecurity = 100 * (
-            0.60 * this.normStat(tovPer75, 'tovPg', true) +  // inverse — fewer TOs better
-            0.40 * this.normStat(s.astTovRatio || 0, 'astTovRatio')
+            0.55 * this.normFair(tovPer75, 'tovPg', archetype, true) +
+            0.45 * this.normFair(s.astTovRatio || 0, 'astTovRatio', archetype)
         );
 
-        // Final Player Offensive Raw
-        const playerOffenseRaw =
-            0.28 * scoringVolume +
-            0.27 * scoringEfficiency +
-            0.20 * playmaking +
-            0.17 * offImpact +
-            0.08 * ballSecurity;
+        // E) Offensive Impact
+        const offImpact = 100 * (
+            0.40 * this.normFairDerived(obpm, -3, 8, -2, 7) +
+            0.35 * this.normFairDerived(offWS, -0.5, 6, -0.2, 5) +
+            0.25 * this.normFairDerived(obpm, -3, 8, -2, 7) // fallback for OffOnOff
+        );
 
-        // Linear map: raw 15→60, raw 90→99
-        let playerOffenseRating = 60 + (playerOffenseRaw - 15) * (39 / 75);
+        // Fair Offensive Weights by Role
+        let playerOffenseRaw;
+        if (archetype === 'guard') {
+            playerOffenseRaw = 0.24 * shotCreation + 0.20 * efficiency + 0.24 * playmaking + 0.12 * ballSecurity + 0.20 * offImpact;
+        } else if (archetype === 'wing') {
+            playerOffenseRaw = 0.26 * shotCreation + 0.24 * efficiency + 0.18 * playmaking + 0.10 * ballSecurity + 0.22 * offImpact;
+        } else { // big
+            playerOffenseRaw = 0.24 * shotCreation + 0.26 * efficiency + 0.14 * playmaking + 0.10 * ballSecurity + 0.26 * offImpact;
+        }
+
+        let playerOffenseRating = 62 + 36 * Math.pow(playerOffenseRaw / 100, 0.90);
         playerOffenseRating = Math.max(60, Math.min(99, playerOffenseRating));
 
 
-        // ------ PLAYER DEFENSIVE RATING (Section 16) ------
-        // A) Defensive Playmaking
-        const defPlaymaking = 100 * (
-            0.35 * this.normStat(s.spg, 'spg') +
-            0.25 * this.normStat(stlPct, 'spg') +
-            0.20 * this.normStat(s.bpg, 'bpg') +
-            0.20 * this.normStat(blkPct, 'bpg')
+        // ------ PLAYER DEFENSIVE RATING ------
+        // A) Defensive Disruption
+        const defDisruption = 100 * (
+            0.35 * this.normFair(s.spg, 'spg', archetype) +
+            0.25 * this.normFair(stlPct, 'spg', archetype) +
+            0.20 * this.normFair(s.bpg, 'bpg', archetype) +
+            0.20 * this.normFair(blkPct, 'bpg', archetype)
         );
 
-        // B) Defensive Impact — use derived stat bounds directly
+        // B) Defensive Impact
         const defImpact = 100 * (
-            0.55 * this.normDerived(dbpm, -3, 5) +     // typical DBPM range
-            0.45 * this.normDerived(defWS, -0.5, 4)    // typical DWS range
+            0.40 * this.normFairDerived(dbpm, -3, 5, -2, 4.5) +
+            0.35 * this.normFairDerived(defWS, -0.5, 4, -0.2, 3.5) +
+            0.25 * this.normFairDerived(dbpm, -3, 5, -2, 4.5) // fallback for DefOnOff
         );
 
-        // C) Defensive Rebounding / Interior — cap contribution to prevent reb-dominant scores
-        const defRebInterior = 100 * (
-            0.65 * this.normStat(s.defRebPg || 0, 'defRebPg') +
-            0.35 * this.normStat(s.rpg, 'rpg')
-        ) * 0.85; // 85% cap to prevent rebounding from dominating defense
-
-        // D) Discipline
-        const discipline = 100 * (
-            1.0 * this.normStat(foulRate, 'foulsPg', true)  // fewer fouls = better
+        // C) Defensive Possession Ending
+        const defPossessionEnding = 100 * (
+            0.55 * this.normFair(s.defRebPg || 0, 'defRebPg', archetype) +
+            0.45 * this.normFair(s.rpg, 'rpg', archetype) // rebalanced to use DREB/RPG
         );
 
-        // Position-adjusted defensive raw (Section 16B)
+        // D) Defensive Discipline
+        const defDiscipline = 100 * (
+            1.0 * this.normFair(foulRate, 'foulsPg', archetype, true)
+        );
+
+        // Fair Defensive Weights by Role
         let playerDefenseRaw;
         if (archetype === 'guard') {
-            playerDefenseRaw = 0.32 * defPlaymaking + 0.38 * defImpact + 0.15 * defRebInterior + 0.15 * discipline;
+            playerDefenseRaw = 0.27 * defDisruption + 0.38 * defImpact + 0.15 * defPossessionEnding + 0.20 * defDiscipline;
         } else if (archetype === 'wing') {
-            playerDefenseRaw = 0.28 * defPlaymaking + 0.38 * defImpact + 0.20 * defRebInterior + 0.14 * discipline;
+            playerDefenseRaw = 0.25 * defDisruption + 0.38 * defImpact + 0.17 * defPossessionEnding + 0.20 * defDiscipline;
         } else { // big
-            playerDefenseRaw = 0.20 * defPlaymaking + 0.38 * defImpact + 0.30 * defRebInterior + 0.12 * discipline;
+            playerDefenseRaw = 0.22 * defDisruption + 0.38 * defImpact + 0.22 * defPossessionEnding + 0.18 * defDiscipline;
         }
 
-        // Linear map: raw 15→60, raw 90→99
-        let playerDefenseRating = 60 + (playerDefenseRaw - 15) * (39 / 75);
+        // High-Physicality Boost (REB, BLK, STL) — increased per user feedback
+        let physicalityBoost = 1.0;
+        if (archetype === 'big') physicalityBoost = 1.30; // 30% boost to physical bigs
+        else if (archetype === 'wing') physicalityBoost = 1.20;
+        else physicalityBoost = 1.15;
+
+        let playerDefenseRating = 62 + 35 * Math.pow((playerDefenseRaw * physicalityBoost) / 100, 0.92);
         playerDefenseRating = Math.max(60, Math.min(99, playerDefenseRating));
 
 
-        // ------ PLAYER SUBSCORES (Section 3B) ------
-        // Impact Score (Section 3B-5) — use proper derived stat bounds
-        const impactScore = 100 * (
+        // ------ PLAYER OVERALL RATING ------
+        // Impact & Versatility
+        const impactScoreRaw = 100 * (
             0.30 * this.normDerived(bpm, -4, 10) +
             0.25 * this.normDerived(s.vorp || 0, 0, 5) +
             0.25 * this.normDerived(ws48, -0.02, 0.22) +
             0.20 * this.normStat(s.per || 15, 'per')
         );
 
-        // Availability / Trust Score (Section 3B-6)
         const availabilityScore = 100 * (
             0.40 * this.clamp01(gpPct) +
             0.35 * this.normStat(s.mpg, 'mpg') +
             0.15 * this.clamp01(gsPct) +
-            0.10 * 1.0  // assume healthy since we don't have injury data in real-time
+            0.10 * 1.0
         );
 
-        // Rebounding Score (for use in overall)
-        const reboundScore = 100 * (
-            0.35 * this.normStat(s.rpg, 'rpg') +
-            0.25 * this.normStat(rebPer75, 'rpg') +
-            0.20 * this.normStat(s.offRebPct || 0, 'offRebPct') +
-            0.20 * this.normStat(s.defRebPg || 0, 'defRebPg')
+        const versatilityScore = 100 * (
+            0.30 * this.normFair(astPct, 'assistRatio', archetype) +
+            0.25 * this.normFair(s.tsPct || 55, 'tsPct', archetype) +
+            0.20 * this.normFair(tovPer75, 'tovPg', archetype, true) +
+            0.25 * this.normFair(s.mpg, 'mpg', archetype)
         );
 
+        // Cap single-bucket dominance (max 15% above impact)
+        // If a player is extremely one dimensional, we cap their offense/defense to not vastly exceed their overall impact
+        const capLimits = (rawVal, impact) => {
+            return Math.min(rawVal, impact + 15);
+        }
+        
+        const cappedOffense = capLimits(playerOffenseRating, impactScoreRaw);
+        const cappedDefense = capLimits(playerDefenseRating, impactScoreRaw);
 
-        // ------ PLAYER OVERALL (Section 17) ------
-        // Use RAW subscores (0-100 scale) to compute overall, NOT the already-scaled ratings
         let playerOverallRaw;
         if (archetype === 'guard') {
-            playerOverallRaw = 0.40 * playerOffenseRaw + 0.22 * playerDefenseRaw + 0.23 * impactScore + 0.10 * availabilityScore + 0.05 * reboundScore;
+            playerOverallRaw = 0.37 * cappedOffense + 0.23 * cappedDefense + 0.22 * impactScoreRaw + 0.10 * availabilityScore + 0.08 * versatilityScore;
         } else if (archetype === 'wing') {
-            playerOverallRaw = 0.35 * playerOffenseRaw + 0.27 * playerDefenseRaw + 0.23 * impactScore + 0.10 * availabilityScore + 0.05 * reboundScore;
+            playerOverallRaw = 0.34 * cappedOffense + 0.26 * cappedDefense + 0.22 * impactScoreRaw + 0.10 * availabilityScore + 0.08 * versatilityScore;
         } else { // big
-            playerOverallRaw = 0.30 * playerOffenseRaw + 0.32 * playerDefenseRaw + 0.23 * impactScore + 0.10 * availabilityScore + 0.05 * reboundScore;
+            playerOverallRaw = 0.32 * cappedOffense + 0.28 * cappedDefense + 0.22 * impactScoreRaw + 0.10 * availabilityScore + 0.08 * versatilityScore;
+            
+            // Reduced center nerf to allow ELITE centers (Jokic/Embiid) to shine while still keeping role-players down
+            playerOverallRaw *= 0.92; 
         }
 
-        // Linear map: raw 15→60, raw 85→98
-        let playerOverall = 60 + (playerOverallRaw - 15) * (38 / 70);
-        playerOverall = Math.max(60, Math.min(98, playerOverall));
+        // Elite Production Multiplier ("Stat Monster" Boost)
+        // If pts > 25, reb > 10, or ast > 8, give a production multiplier
+        let starPower = 1.0;
+        if (s.ppg > 27) starPower += 0.08;
+        if (s.rpg > 11) starPower += 0.05;
+        if (s.apg > 9) starPower += 0.05;
+        if (s.spg > 1.8 || s.bpg > 1.8) starPower += 0.04;
+        
+        playerOverallRaw *= starPower;
 
-        // Floor for low-minute, low-GP players
-        if (s.mpg < 8 && s.gp < 15) {
-            playerOverall = Math.min(playerOverall, 72);
+        // --- THE STAR POWER RECALIBRATION ---
+        
+        // 1. Efficiency Floor (TS% Penalty)
+        // High volume on bad efficiency is penalized. Elite efficiency is rewarded.
+        const tsPct = parseFloat(s.tsPct) || 54;
+        let efficiencyMult = 1.0;
+        if (tsPct < 52) efficiencyMult = 0.88;
+        else if (tsPct < 54) efficiencyMult = 0.94;
+        else if (tsPct > 61) efficiencyMult = 1.04;
+        else if (tsPct > 64) efficiencyMult = 1.07;
+
+        // 2. Team Success Factor (Winning Matters)
+        // Stars on winning teams get a boost.
+        // We use the first record item's winPercent if available.
+        const winPctStat = team?.records?.[0]?.stats?.find(st => st.name === 'winPercent');
+        const winPct = winPctStat ? winPctStat.value : 0.5;
+        const winFactor = 0.96 + (winPct * 0.08); // Range: 0.96 to 1.04
+
+        // 3. Specialist Penalty (The Dyson Daniels Fix)
+        // If you are a defensive god but score < 15 PPG, you are a role player, not a superstar.
+        const ppg = parseFloat(s.ppg) || 0;
+        let specialistPenalty = 1.0;
+        if (ppg < 13 && defImpact > 82) specialistPenalty = 0.87;
+        else if (ppg < 16 && defImpact > 82) specialistPenalty = 0.92;
+
+        let playerOverall = 64 + 31 * Math.pow(playerOverallRaw / 100, 1.15);
+        playerOverall *= (efficiencyMult * winFactor * specialistPenalty);
+
+        // Volume Multiplier (MPG Rewards)
+        const mpg = parseFloat(s.mpg) || 0;
+        let volumeMult = 1.0;
+        if (mpg < 22) volumeMult = 0.80;
+        else if (mpg < 28) volumeMult = 0.90;
+        else if (mpg > 33) volumeMult = 1.04;
+        else if (mpg > 35) volumeMult = 1.06;
+        
+        playerOverall *= volumeMult;
+
+        // --- THE "RARE ELITE" BARRIERS ---
+        const apg = parseFloat(s.apg) || 0;
+        const rpg = parseFloat(s.rpg) || 0;
+
+        // 90+ is reserved for the Engines (23+ PPG or 9.5+ AST)
+        if (playerOverall >= 90) {
+            if (ppg < 23 && apg < 9.5) {
+                playerOverall = Math.min(playerOverall, 89.9);
+            }
+        }
+        
+        // 85+ is reserved for All-Star candidates (17+ PPG or elite combinations)
+        if (playerOverall >= 85) {
+            if (ppg < 17 && apg < 7 && rpg < 10) {
+                playerOverall = Math.min(playerOverall, 84.9);
+            }
+        }
+
+        // Hard cap at 96.8 per user request to avoid "peak level" 99
+        playerOverall = Math.max(60, Math.min(96.8, playerOverall));
+
+        // Strict 20 Game Qualification Floor for top tier
+        if (s.gp < 20) {
+            playerOverall = Math.min(playerOverall, 79.9);
+            if (s.gp < 5) playerOverall = Math.min(playerOverall, 72.0);
         }
 
         playerOverall = Math.round(playerOverall * 10) / 10;
+
+        // Archetype Determination
+        let archetypeLabel = "Role Player";
+        if (playerOverall >= 95) archetypeLabel = "Generational Talent";
+        else if (playerOverall >= 90) archetypeLabel = "Superstar";
+        else if (playerOverall >= 85) archetypeLabel = "All-NBA Tier";
+        else if (playerOverall >= 80) archetypeLabel = "Elite Starter";
+
+        // Specific subscore archetypes
+        if (shotCreation > 85 && playmaking > 80) archetypeLabel = "Offensive Engine";
+        else if (shotCreation > 85 && archetype === 'guard') archetypeLabel = "Elite Shot Creator";
+        else if (shotCreation > 80 && efficiency > 80) archetypeLabel = "3-Level Scorer";
+        else if (defImpact > 85 && reboundingScore > 80) archetypeLabel = "Paint Protector";
+        else if (defImpact > 80 && (parseFloat(s.stl) > 1.5 || parseFloat(s.blk) > 1.5)) archetypeLabel = "Two-Way Force";
+        else if (efficiency > 85 && parseFloat(s.threePct) > 38) archetypeLabel = "Sharpshooter";
 
         return {
             rating: playerOverall.toFixed(1),
             ratingNum: playerOverall,
             offRating: playerOffenseRating.toFixed(1),
             defRating: playerDefenseRating.toFixed(1),
+            posAbbrev: posAbbrev,
             pts: s.ppg.toFixed(1),
             reb: s.rpg.toFixed(1),
             ast: s.apg.toFixed(1),
             stl: s.spg.toFixed(1),
             blk: s.bpg.toFixed(1),
-            gp: Math.round(s.gp),
+            gp: s.gp,
             mpg: s.mpg.toFixed(1),
-            posAbbrev,
-            hasRealStats: true,
-            // Subscores for UI display
-            scoringScore: Math.round(scoringVolume),
-            playmakingScore: Math.round(playmaking),
-            reboundingScore: Math.round(reboundScore),
-            defenseScore: Math.round(defPlaymaking),
-            impactScore: Math.round(impactScore),
+            fgPct: s.fgPct?.toFixed(2),
+            threePct: s.threePct?.toFixed(2),
+            efgPct: s.efgPct?.toFixed(2),
+            tsPct: s.tsPct?.toFixed(2),
+            per: s.per?.toFixed(1),
+            shotCreation: Math.round(shotCreation),
+            efficiency: Math.round(efficiency),
+            playmaking: Math.round(playmaking),
+            rebounding: Math.round(defPossessionEnding),
+            defenseScore: Math.round(defDisruption),
+            impactScore: Math.round(impactScoreRaw),
             availabilityScore: Math.round(availabilityScore),
+            archetype: archetypeLabel,
         };
     },
 
