@@ -8,9 +8,11 @@ const store = {
         games: [],
         teams: [],
         teamStats: {},
+        teamDetailedStats: {},     // Core API team statistics
         teamRankings: [],
         players: [],
         rosters: {},
+        leagueStats: {},           // min/max/avg for normalization
         favorites: {
             teams: [],
             players: []

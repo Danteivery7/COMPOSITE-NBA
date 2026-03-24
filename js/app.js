@@ -54,12 +54,18 @@ const app = {
             store.setGames(games);
             store.setTeams(teams);
 
-            // Fetch team stats — all 30 in parallel
-            const statPromises = teams.map(t => api.fetchTeamStats(t.id));
-            const teamProfiles = await Promise.all(statPromises);
+            // Fetch team profile stats + Core API detailed stats — all 30 in parallel
+            const [teamProfiles, teamDetailedStats] = await Promise.all([
+                Promise.all(teams.map(t => api.fetchTeamStats(t.id))),
+                Promise.all(teams.map(t => api.fetchTeamStatistics(t.id)))
+            ]);
 
             teamProfiles.forEach((profile, idx) => {
                 if (profile) store.setTeamStats(teams[idx].id, profile);
+            });
+
+            teamDetailedStats.forEach((stats, idx) => {
+                if (stats) store.state.teamDetailedStats[teams[idx].id] = stats;
             });
 
             // Generate initial rankings
