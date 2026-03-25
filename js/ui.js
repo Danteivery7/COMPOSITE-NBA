@@ -243,8 +243,6 @@ const ui = {
 
         container.innerHTML = sortedGames.map(game => this.createGameCard(game, now)).join('');
 
-        container.innerHTML = activeGames.map(game => this.createGameCard(game, now)).join('');
-
         // Bind click handlers
         container.querySelectorAll('.game-card[data-game-id]').forEach(card => {
             card.addEventListener('click', (e) => {
