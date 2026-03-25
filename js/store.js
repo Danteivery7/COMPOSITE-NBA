@@ -49,9 +49,6 @@ const store = {
 
         document.body.setAttribute('data-theme', this.state.settings.theme);
 
-        // Force clear cache once to ensure new rating algorithms run
-        localStorage.removeItem('nbaCompCache');
-
         // Load cached data for INSTANT page load
         this.loadCache();
     },

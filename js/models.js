@@ -587,9 +587,11 @@ const models = {
                 if (s.name === 'pointsAgainst') ptsAgainst = s.value;
             });
         } else {
-            const idNum = parseInt(teamRaw.id) || 1;
-            wins = (idNum % 40) + 10;
-            losses = 82 - wins;
+            // Neutral baseline: 0-0 record, neutral numbers
+            wins = 0;
+            losses = 0;
+            ptsFor = 0;
+            ptsAgainst = 0;
         }
 
         const totalGames = (wins + losses) || 1;
@@ -798,12 +800,14 @@ const models = {
             teamDefOverall = Math.max(62, Math.min(95, teamDefOverall));
 
             // --- Final Team Overall (Section 19C) ---
+            // Recalibrated to favor Roster Strength (Star Power + Rotation)
+            // 35% Roster influence instead of 22%
             const teamRaw =
-                0.24 * finalTeamOffenseScore +
-                0.24 * finalTeamDefenseScore +
-                0.22 * teamResultsScore +
+                0.20 * finalTeamOffenseScore +
+                0.20 * finalTeamDefenseScore +
+                0.17 * teamResultsScore +
                 0.08 * scheduleContextScore +
-                0.22 * teamRosterOverallScore;
+                0.35 * teamRosterOverallScore;
 
             let teamOverall = 62 + 33 * Math.pow(teamRaw / 100, 0.88);
             teamOverall = Math.max(60, Math.min(95, teamOverall));
