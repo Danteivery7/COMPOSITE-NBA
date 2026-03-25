@@ -162,7 +162,7 @@ const app = {
                     const rosterObj = store.state.rosters[teamId];
                     if (rosterObj && rosterObj.athletes) {
                         const athlete = rosterObj.athletes.find(a => String(a.id) === String(playerId));
-                        if (athlete && !athlete.realStats) {
+                        if (athlete && stats) {
                             athlete.realStats = stats;
                         }
                     }
