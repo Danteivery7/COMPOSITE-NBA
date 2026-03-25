@@ -90,14 +90,30 @@ const store = {
             const cache = {
                 teams: this.state.teams,
                 teamRankings: this.state.teamRankings,
-                players: this.state.players.slice(0, 100), // Cache top 100 players for instant display
+                players: this.state.players.slice(0, 150), // Cache top 150 players
+                rosters: this.state.rosters,
+                teamStats: this.state.teamStats,
+                teamDetailedStats: this.state.teamDetailedStats,
                 lastUpdated: this.state.lastUpdated,
                 timestamp: Date.now()
             };
-            localStorage.setItem('nbaCompCache', JSON.stringify(cache));
+            
+            // Try to save; if it exceeds quota, we'll catch and try a smaller version
+            try {
+                localStorage.setItem('nbaCompCache', JSON.stringify(cache));
+            } catch (quotaErr) {
+                console.warn('[Cache] Quota exceeded, saving minimal version');
+                const minimal = {
+                    teams: this.state.teams,
+                    teamRankings: this.state.teamRankings,
+                    players: this.state.players.slice(0, 50),
+                    lastUpdated: this.state.lastUpdated,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('nbaCompCache', JSON.stringify(minimal));
+            }
         } catch (e) {
-            // localStorage might be full; silently fail
-            console.warn('[Cache] Save failed:', e.message);
+            console.warn('[Cache] Save failed completely:', e.message);
         }
     },
 
@@ -112,28 +128,24 @@ const store = {
 
             const cache = JSON.parse(raw);
             const age = Date.now() - (cache.timestamp || 0);
-            const MAX_AGE = 60 * 60 * 1000; // 1 hour max cache age
+            const MAX_AGE = 4 * 60 * 60 * 1000; // 4 hours cache age
 
             if (age > MAX_AGE) {
                 console.log('[Cache] Expired, will fetch fresh.');
                 return;
             }
 
-            if (cache.teams && cache.teams.length > 0) {
-                this.state.teams = cache.teams;
-                this.state.lastUpdated.teams = cache.lastUpdated?.teams || 0;
-            }
-            if (cache.teamRankings && cache.teamRankings.length > 0) {
-                this.state.teamRankings = cache.teamRankings;
-            }
-            if (cache.players && cache.players.length > 0) {
-                this.state.players = cache.players;
-                this.state.lastUpdated.players = cache.lastUpdated?.players || 0;
-            }
+            if (cache.teams) this.state.teams = cache.teams;
+            if (cache.teamRankings) this.state.teamRankings = cache.teamRankings;
+            if (cache.players) this.state.players = cache.players;
+            if (cache.rosters) this.state.rosters = cache.rosters;
+            if (cache.teamStats) this.state.teamStats = cache.teamStats;
+            if (cache.teamDetailedStats) this.state.teamDetailedStats = cache.teamDetailedStats;
+            if (cache.lastUpdated) this.state.lastUpdated = { ...this.state.lastUpdated, ...cache.lastUpdated };
 
             this.state.cacheLoaded = true;
             const ageMins = Math.round(age / 60000);
-            console.log(`[Cache] Restored ${cache.teams?.length || 0} teams, ${cache.players?.length || 0} players (${ageMins}m old)`);
+            console.log(`[Cache] Restored ${cache.teams?.length || 0} teams, ${cache.players?.length || 0} players, ${Object.keys(cache.rosters || {}).length} rosters (${ageMins}m old)`);
         } catch (e) {
             console.warn('[Cache] Load failed:', e.message);
         }

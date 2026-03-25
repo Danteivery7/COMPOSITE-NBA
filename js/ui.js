@@ -3,17 +3,40 @@
    All DOM rendering, navigation, filters, and detail views
    ============================================================ */
 const ui = {
+    navStack: [],
 
     init() {
         this.bindNav();
         this.bindTheme();
         this.bindSettings();
         this.bindPlayerFilters();
+        
+        // Add sync indicator to the header if not present
+        this.ensureSyncIndicator();
 
         setTimeout(() => {
             const activeTab = document.querySelector('.nav-btn.active');
             if (activeTab) activeTab.click();
         }, 500);
+    },
+
+    ensureSyncIndicator() {
+        const header = document.querySelector('.header-actions');
+        if (header && !document.getElementById('sync-indicator')) {
+            const span = document.createElement('span');
+            span.id = 'sync-indicator';
+            span.innerHTML = '<span class="dot-sync"></span> Syncing';
+            span.className = 'sync-indicator hidden';
+            header.prepend(span);
+        }
+    },
+
+    setSyncing(isSyncing) {
+        const el = document.getElementById('sync-indicator');
+        if (el) {
+            if (isSyncing) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
     },
 
     // ==================== NAVIGATION ====================
@@ -26,13 +49,17 @@ const ui = {
         });
     },
 
-    switchTab(tabId) {
+    switchTab(tabId, pushToStack = true) {
         console.log('[UI] Switching to tab:', tabId);
         
-        // Track the previous pane for back navigation
         const currentPane = document.querySelector('.pane.active')?.id?.replace('pane-', '');
-        if (currentPane && tabId !== currentPane) {
-            this.previousPane = currentPane;
+        
+        // If switching from main nav (manually), clear the stack
+        const isMainNav = document.querySelector(`.nav-btn[data-tab="${tabId}"]`) !== null;
+        if (isMainNav && pushToStack && !['player-detail', 'team-detail', 'game-detail'].includes(tabId)) {
+            this.navStack = [];
+        } else if (pushToStack && currentPane && currentPane !== tabId) {
+            this.navStack.push(currentPane);
         }
 
         window.scrollTo(0, 0);
@@ -68,6 +95,15 @@ const ui = {
             this.renderLiveGames(store.state.games);
         } else if (tabId === 'favorites') {
             this.renderFavorites();
+        }
+    },
+
+    goBack() {
+        if (this.navStack.length > 0) {
+            const prev = this.navStack.pop();
+            this.switchTab(prev, false); // Don't push to stack when going back
+        } else {
+            this.switchTab('live', false);
         }
     },
 
@@ -453,7 +489,7 @@ const ui = {
         // Initial loading state
         pane.innerHTML = `
             <div class="back-bar">
-                <button class="back-btn" onclick="ui.switchTab('live')">
+                <button class="back-btn" onclick="ui.goBack()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Back to Scores
                 </button>
@@ -492,7 +528,7 @@ const ui = {
 
         const html = `
             <div class="back-bar">
-                <button class="back-btn" onclick="ui.switchTab('live')">
+                <button class="back-btn" onclick="ui.goBack()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Back to Scores
                 </button>
@@ -913,7 +949,7 @@ const ui = {
         container.innerHTML = `
             <div class="pane-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
                 <div style="display:flex; align-items:center; gap:20px;">
-                    <button class="back-btn" onclick="ui.switchTab(ui.previousPane || 'teams')">← Back</button>
+                    <button class="back-btn" onclick="ui.goBack()">← Back</button>
                     <div style="display:flex; align-items:center; gap:14px;">
                         <img src="${team.logos?.[0]?.href || ''}" width="48" height="48" style="border-radius:8px;">
                         <div>
@@ -1043,7 +1079,7 @@ const ui = {
 
         container.innerHTML = `
             <div class="pane-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
-                <button class="back-btn" onclick="ui.switchTab(ui.previousPane || 'players')">← Back</button>
+                <button class="back-btn" onclick="ui.goBack()">← Back</button>
                 <button class="action-btn" onclick="store.toggleFavorite('player', '${p.id}'); ui.showPlayerDetail('${p.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
                     ${isFav ? '⭐ Favorited' : '☆ Favorite'}
                 </button>

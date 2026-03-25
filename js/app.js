@@ -7,6 +7,10 @@ const app = {
 
     async init() {
         console.log('[CompositeNBA] Initializing...');
+        
+        // Fast-path: Load cache before anything else
+        store.loadCache();
+
         ui.init();
 
         // Subscribe to state changes
@@ -18,13 +22,20 @@ const app = {
             }
             if (key === 'teams') ui.renderTeamsList(store.state.teams);
             if (key === 'players') ui.renderPlayersList(store.state.players);
-            if (key === 'loading') ui.renderLoadingProgress();
+            if (key === 'loading') {
+                // Only show loading progress if we don't have cached data yet
+                if (!store.state.cacheLoaded) ui.renderLoadingProgress();
+            }
         });
 
         // ---- INSTANT RENDER from cache ----
         if (store.state.cacheLoaded) {
             console.log('[CompositeNBA] Rendering cached data instantly...');
-            ui.renderLiveGames([]);
+            // Re-run models to ensure derived state (ratings) are available from the raw cached stats
+            models.updateAllPlayers();
+            models.updateTeamRankings();
+
+            ui.renderLiveGames(store.state.games || []);
             ui.renderRankings(store.state.teamRankings);
             ui.renderTeamsList(store.state.teams);
             ui.renderPlayersList(store.state.players);
@@ -44,6 +55,7 @@ const app = {
     },
 
     async fetchBaseData() {
+        ui.setSyncing(true);
         try {
             // Parallel fetch teams + scoreboard
             const [games, teams] = await Promise.all([
@@ -74,8 +86,12 @@ const app = {
             // Fetch ALL rosters
             await this.fetchAllRosters(teams);
 
+            // Final save to cache
+            store.saveCache();
         } catch (e) {
             console.error('[CompositeNBA] Critical boot failure:', e);
+        } finally {
+            ui.setSyncing(false);
         }
     },
 
