@@ -216,7 +216,32 @@ const ui = {
             statusText.textContent = liveCount > 0 ? `${liveCount} Live` : 'Updated';
         }
 
-        container.innerHTML = activeGames.map(game => this.createGameCard(game, now)).join('');
+        // --- Custom Sorting Logic ---
+        const sortedGames = [...activeGames].sort((a, b) => {
+            const getPriority = (g) => {
+                const state = g.status?.type?.state;
+                const d = new Date(g.date);
+                const mins = (d - now) / 60000;
+
+                if (state === 'in') return 0; // 1. LIVE
+                if (state === 'pre') {
+                    if (mins <= 5) return 1;  // 2. ABOUT TO START (5m)
+                    if (mins <= 30) return 2; // 3. STARTING SOON (30m)
+                    return 3;                // 4. SCHEDULED
+                }
+                if (state === 'post') return 4; // 5. FINAL
+                return 5;
+            };
+
+            const pA = getPriority(a);
+            const pB = getPriority(b);
+
+            if (pA !== pB) return pA - pB;
+            // Within same priority, sort by game time
+            return new Date(a.date) - new Date(b.date);
+        });
+
+        container.innerHTML = sortedGames.map(game => this.createGameCard(game, now)).join('');
 
         container.innerHTML = activeGames.map(game => this.createGameCard(game, now)).join('');
 

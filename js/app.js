@@ -167,8 +167,13 @@ const app = {
                         }
                     }
                 });
-                models.updateAllPlayers();
-                models.updateTeamRankings();
+                
+                // Only trigger expensive model updates every 120 players (10 batches of 12)
+                // to keep the UI responsive during high-volume data ingestion
+                if (Object.keys(batchResults).length % (12 * 10) === 0) {
+                    models.updateAllPlayers();
+                    models.updateTeamRankings();
+                }
             }
         );
 
