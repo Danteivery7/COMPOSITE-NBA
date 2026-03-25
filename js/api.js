@@ -88,99 +88,61 @@ const api = {
     },
 
     /**
-     * Fetch individual player season stats from ESPN Core API.
-     * Captures ALL available stats for the comprehensive rating system.
+     * Fetch player stats from the HIGH-RELIABILITY Site API.
+     * This is the same API that powers ESPN.com player cards.
      */
     async fetchPlayerStats(playerId) {
         try {
-            let seasonYear = this.getSeasonYear();
-
-            let statsRes = await fetch(
-                `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear}/types/2/athletes/${playerId}/statistics`
-            );
-
-            // Fallback to previous year if current one fails (common during season transitions/late updates)
-            if (!statsRes.ok) {
-                seasonYear--;
-                statsRes = await fetch(
-                    `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${seasonYear}/types/2/athletes/${playerId}/statistics`
-                );
-            }
-
+            // Site API Summary endpoint (More reliable than Core API)
+            const url = `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${playerId}`;
+            const statsRes = await fetch(url);
             if (!statsRes.ok) return null;
 
             const data = await statsRes.json();
-            
-            // Core API stats can be in data.splits (object) or data.splits[0] (array) 
-            // or even directly in data.categories sometimes.
-            let categories = [];
-            if (data.categories) {
-                categories = data.categories;
-            } else if (data.splits) {
-                if (Array.isArray(data.splits)) {
-                    // Usually the first split is the comprehensive season stats
-                    categories = data.splits[0].categories || [];
-                } else {
-                    categories = data.splits.categories || [];
-                }
-            }
+            const athlete = data.athlete || {};
+            const statsArray = athlete.statsSummary?.statistics || [];
 
             let nameMap = {};
-            categories.forEach(cat => {
-                if (cat.stats && Array.isArray(cat.stats)) {
-                    cat.stats.forEach(s => {
-                        nameMap[s.name] = parseFloat(s.value) || 0;
-                    });
-                }
+            statsArray.forEach(s => {
+                nameMap[s.name] = parseFloat(s.value) || 0;
             });
 
-            return {
+            // If primary stats are missing, check if they are buried in another array
+            if (!nameMap['avgPoints'] && !nameMap['points']) return null;            return {
                 // Core production
-                ppg: nameMap['avgPoints'] || 0,
-                rpg: nameMap['avgRebounds'] || 0,
-                apg: nameMap['avgAssists'] || 0,
-                spg: nameMap['avgSteals'] || 0,
-                bpg: nameMap['avgBlocks'] || 0,
-                tovPg: nameMap['avgTurnovers'] || 0,
+                ppg: nameMap['avgPoints'] || nameMap['points'] || 0,
+                rpg: nameMap['avgRebounds'] || nameMap['rebounds'] || 0,
+                apg: nameMap['avgAssists'] || nameMap['assists'] || 0,
+                spg: nameMap['avgSteals'] || nameMap['steals'] || 0,
+                bpg: nameMap['avgBlocks'] || nameMap['blocks'] || 0,
+                tovPg: nameMap['avgTurnovers'] || nameMap['turnovers'] || 0,
                 foulsPg: nameMap['avgFouls'] || 0,
-
-                // Shooting
-                fgPct: nameMap['fieldGoalPct'] || 0,
-                threePct: nameMap['threePointPct'] || nameMap['threePointFieldGoalPct'] || 0,
-                ftPct: nameMap['freeThrowPct'] || 0,
-                tsPct: nameMap['trueShootingPct'] || 0,
-                efgPct: nameMap['effectiveFGPct'] || 0,
-                twoPtPct: nameMap['twoPointFieldGoalPct'] || 0,
-
-                // Volume
-                fga: nameMap['avgFieldGoalsAttempted'] || 0,
-                fgm: nameMap['avgFieldGoalsMade'] || 0,
-                threePA: nameMap['avgThreePointFieldGoalsAttempted'] || 0,
-                threePM: nameMap['avgThreePointFieldGoalsMade'] || 0,
-                fta: nameMap['avgFreeThrowsAttempted'] || 0,
-                ftm: nameMap['avgFreeThrowsMade'] || 0,
-
-                // Availability & role
+                mpg: nameMap['avgMinutes'] || nameMap['minutes'] || 0,
                 gp: nameMap['gamesPlayed'] || 0,
                 gs: nameMap['gamesStarted'] || 0,
-                mpg: nameMap['avgMinutes'] || 0,
-                totalMinutes: nameMap['minutes'] || 0,
+                
+                // Efficiency
+                fgPct: nameMap['fieldGoalPct'] || 0,
+                threePtPct: nameMap['threePointFieldGoalPct'] || 0,
+                ftPct: nameMap['freeThrowPct'] || 0,
+                efgPct: nameMap['effectiveFGPct'] || 0,
+                tsPct: nameMap['trueShootingPct'] || 0,
+                
+                // Volume
+                fga: nameMap['avgFieldGoalsAttempted'] || nameMap['fieldGoalsAttempted'] || 0,
+                fgm: nameMap['avgFieldGoalsMade'] || nameMap['fieldGoalsMade'] || 0,
+                fta: nameMap['avgFreeThrowsAttempted'] || nameMap['freeThrowsAttempted'] || 0,
+                ftm: nameMap['avgFreeThrowsMade'] || nameMap['freeThrowsMade'] || 0,
+                threePA: nameMap['avgThreePointFieldGoalsAttempted'] || nameMap['threePointFieldGoalsAttempted'] || 0,
+                threePM: nameMap['avgThreePointFieldGoalsMade'] || nameMap['threePointFieldGoalsMade'] || 0,
 
-                // Advanced
+                // Advanced metrics from Site API
                 per: nameMap['PER'] || 0,
-                plusMinus: nameMap['plusMinus'] || 0,
                 usage: nameMap['usageRate'] || 0,
                 vorp: nameMap['VORP'] || 0,
-                nbaRating: nameMap['NBARating'] || 0,
-
-                // Ratios
-                astTovRatio: nameMap['assistTurnoverRatio'] || 0,
-                stlFoulRatio: nameMap['stealFoulRatio'] || 0,
-                stlTovRatio: nameMap['stealTurnoverRatio'] || 0,
+                ortg: nameMap['offensiveRating'] || 0,
+                drtg: nameMap['defensiveRating'] || 0,
                 assistRatio: nameMap['assistRatio'] || 0,
-                turnoverRatio: nameMap['turnoverRatio'] || 0,
-
-                // Rebounding
                 offRebPg: nameMap['avgOffensiveRebounds'] || 0,
                 defRebPg: nameMap['avgDefensiveRebounds'] || 0,
                 offRebPct: nameMap['offensiveReboundPct'] || 0,
