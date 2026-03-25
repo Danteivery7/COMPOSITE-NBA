@@ -110,7 +110,20 @@ const api = {
             if (!statsRes.ok) return null;
 
             const data = await statsRes.json();
-            const categories = data.splits?.categories || [];
+            
+            // Core API stats can be in data.splits (object) or data.splits[0] (array) 
+            // or even directly in data.categories sometimes.
+            let categories = [];
+            if (data.categories) {
+                categories = data.categories;
+            } else if (data.splits) {
+                if (Array.isArray(data.splits)) {
+                    // Usually the first split is the comprehensive season stats
+                    categories = data.splits[0].categories || [];
+                } else {
+                    categories = data.splits.categories || [];
+                }
+            }
 
             let nameMap = {};
             categories.forEach(cat => {
