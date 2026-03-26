@@ -261,40 +261,27 @@ const api = {
      * Fetch player stats in PARALLEL BATCHES of 6.
      */
     async fetchPlayerStatsParallel(playerEntries, onProgress, onBatchComplete) {
-        const BATCH_SIZE = 12; // Back to high speed
-        const BATCH_DELAY = 40;
         const results = {};
         let fetched = 0;
+        const DELAY = 100; // 100ms between players = stable
 
-        for (let i = 0; i < playerEntries.length; i += BATCH_SIZE) {
-            const batch = playerEntries.slice(i, i + BATCH_SIZE);
-            const currentBatchResults = {};
-
-            const batchResults = await Promise.allSettled(
-                batch.map(entry =>
-                    this.fetchPlayerStats(entry.id).then(stats => ({
-                        id: entry.id,
-                        teamId: entry.teamId,
-                        stats
-                    }))
-                )
-            );
-
-            batchResults.forEach(result => {
-                if (result.status === 'fulfilled' && result.value && result.value.stats) {
-                    const { id, teamId, stats } = result.value;
-                    results[id] = { stats, teamId };
-                    currentBatchResults[id] = { stats, teamId };
+        for (const entry of playerEntries) {
+            try {
+                const stats = await this.fetchPlayerStats(entry.id);
+                if (stats) {
+                    const res = { [entry.id]: { stats, teamId: entry.teamId } };
+                    results[entry.id] = res[entry.id];
+                    if (onBatchComplete) onBatchComplete(res);
                 }
-            });
-
-            fetched += batch.length;
-            if (onProgress) onProgress(fetched, playerEntries.length);
-            if (onBatchComplete) onBatchComplete(currentBatchResults);
-
-            if (i + BATCH_SIZE < playerEntries.length) {
-                await new Promise(r => setTimeout(r, BATCH_DELAY));
+            } catch (error) {
+                console.warn(`[API] Failed to fetch stats for ${entry.id}:`, error);
             }
+
+            fetched++;
+            if (onProgress) onProgress(fetched, playerEntries.length);
+            
+            // Throttle to avoid ESPN 403
+            await new Promise(r => setTimeout(r, DELAY));
         }
 
         return results;
