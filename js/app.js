@@ -168,30 +168,24 @@ const app = {
                     }
                 });
                 
-                // Only trigger expensive model updates every 120 players (10 batches of 12)
-                // to keep the UI responsive during high-volume data ingestion
-                if (Object.keys(batchResults).length % (12 * 10) === 0) {
+                // Trigger UI refresh every 25 players to show progress
+                const fetchedCount = store.state.loadingProgress.playerStats.current || 0;
+                if (fetchedCount % 25 === 0) {
                     models.updateAllPlayers();
                     models.updateTeamRankings();
+                    ui.renderTeamRankings();
+                    if (ui.currentView === 'players') ui.renderPlayers();
                 }
             }
         );
 
-        // Final pass
-        Object.keys(results).forEach(playerId => {
-            const { stats, teamId } = results[playerId];
-            const rosterObj = store.state.rosters[teamId];
-            if (rosterObj && rosterObj.athletes) {
-                const athlete = rosterObj.athletes.find(a => String(a.id) === String(playerId));
-                if (athlete) athlete.realStats = stats;
-            }
-        });
-
-        store.updateLoadingProgress('playerStats', allPlayerEntries.length, allPlayerEntries.length, 'done');
+        // 3. Final Model Update & UI Refresh
         models.updateAllPlayers();
         models.updateTeamRankings();
+        ui.renderTeamRankings();
+        if (ui.currentView === 'players') ui.renderPlayers();
 
-        console.log(`[CompositeNBA] Stats complete: ${Object.keys(results).length}/${allPlayerEntries.length} players.`);
+        console.log(`[CompositeNBA] Stats sync complete: ${allPlayerEntries.length} players tracked.`);
     },
 
     /**
