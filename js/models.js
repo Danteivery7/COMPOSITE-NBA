@@ -40,7 +40,7 @@ const models = {
      * Compute league-wide and role-specific min/max for all stat keys from all players with real stats.
      */
     computeLeagueStats() {
-        const rosters = store.state.rosters;
+        const rosters = window.store.state.rosters;
         const allStats = [];
         const roleStatsMap = { guard: [], wing: [], big: [] };
 
@@ -88,8 +88,8 @@ const models = {
             return bounds;
         };
 
-        store.state.leagueStats = buildBounds(allStats);
-        store.state.roleStats = {
+        window.store.state.leagueStats = buildBounds(allStats);
+        window.store.state.roleStats = {
             guard: buildBounds(roleStatsMap.guard),
             wing: buildBounds(roleStatsMap.wing),
             big: buildBounds(roleStatsMap.big)
