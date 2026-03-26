@@ -182,16 +182,6 @@ const api = {
             return null;
         }
     },
-                totalTurnovers: nameMap['totalTurnovers'] || nameMap['turnovers'] || 0,
-
-                // Doubles
-                doubleDouble: nameMap['doubleDouble'] || 0,
-                tripleDouble: nameMap['tripleDouble'] || 0,
-            };
-        } catch (error) {
-            return null;
-        }
-    },
 
     /**
      * Fetch detailed team statistics from ESPN Core API.
