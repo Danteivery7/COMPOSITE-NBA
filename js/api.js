@@ -258,8 +258,8 @@ const api = {
      * Fetch player stats in PARALLEL BATCHES of 6.
      */
     async fetchPlayerStatsParallel(playerEntries, onProgress, onBatchComplete) {
-        const BATCH_SIZE = 5;
-        const BATCH_DELAY = 150;
+        const BATCH_SIZE = 12; // Back to high speed
+        const BATCH_DELAY = 40;
         const results = {};
         let fetched = 0;
 
