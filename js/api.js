@@ -258,13 +258,14 @@ const api = {
      * Fetch player stats in PARALLEL BATCHES of 6.
      */
     async fetchPlayerStatsParallel(playerEntries, onProgress, onBatchComplete) {
-        const BATCH_SIZE = 12;
-        const BATCH_DELAY = 30;
+        const BATCH_SIZE = 5;
+        const BATCH_DELAY = 150;
         const results = {};
         let fetched = 0;
 
         for (let i = 0; i < playerEntries.length; i += BATCH_SIZE) {
             const batch = playerEntries.slice(i, i + BATCH_SIZE);
+            const currentBatchResults = {};
 
             const batchResults = await Promise.allSettled(
                 batch.map(entry =>
@@ -277,20 +278,16 @@ const api = {
             );
 
             batchResults.forEach(result => {
-                if (result.status === 'fulfilled' && result.value.stats) {
-                    results[result.value.id] = {
-                        stats: result.value.stats,
-                        teamId: result.value.teamId
-                    };
+                if (result.status === 'fulfilled' && result.value && result.value.stats) {
+                    const { id, teamId, stats } = result.value;
+                    results[id] = { stats, teamId };
+                    currentBatchResults[id] = { stats, teamId };
                 }
             });
 
             fetched += batch.length;
             if (onProgress) onProgress(fetched, playerEntries.length);
-
-            if (onBatchComplete && fetched % (BATCH_SIZE * 4) === 0) {
-                onBatchComplete(results);
-            }
+            if (onBatchComplete) onBatchComplete(currentBatchResults);
 
             if (i + BATCH_SIZE < playerEntries.length) {
                 await new Promise(r => setTimeout(r, BATCH_DELAY));
