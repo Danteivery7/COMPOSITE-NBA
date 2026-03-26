@@ -167,26 +167,26 @@ const app = {
                         }
                     }
                 });
-                
-                // Trigger UI refresh every 25 players to show progress
-                const fetchedCount = window.store.state.loadingProgress.playerStats.current || 0;
-                if (fetchedCount % 25 === 0) {
-                    window.models.updateAllPlayers();
-                    window.models.updateTeamRankings();
-                    window.ui.renderTeamRankings();
-                    if (window.ui.currentView === 'players') window.ui.renderPlayers();
-                }
             }
         );
 
         // 3. Final Model Update & UI Refresh
-        window.window.store.updateLoadingProgress('playerStats', allPlayerEntries.length, allPlayerEntries.length, 'done');
-        window.window.models.updateAllPlayers();
-        window.window.models.updateTeamRankings();
-        window.window.ui.renderTeamRankings();
-        if (window.window.ui.currentView === 'players') window.window.ui.renderPlayers();
+        window.store.updateLoadingProgress('playerStats', allPlayerEntries.length, allPlayerEntries.length, 'done');
+        
+        const finalSync = () => {
+            console.log('[App] Performing final rating calculation...');
+            window.models.updateAllPlayers();
+            window.models.updateTeamRankings();
+            window.ui.renderTeamRankings();
+            if (window.ui.currentView === 'players') window.ui.renderPlayers();
+            console.log(`[CompositeNBA] Stats sync complete: ${allPlayerEntries.length} players tracked.`);
+        };
 
-        console.log(`[CompositeNBA] Stats sync complete: ${allPlayerEntries.length} players tracked.`);
+        if (window.requestIdleCallback) {
+            window.requestIdleCallback(finalSync);
+        } else {
+            setTimeout(finalSync, 500);
+        }
     },
 
     /**
