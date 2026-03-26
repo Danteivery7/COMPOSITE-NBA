@@ -88,27 +88,34 @@ const api = {
     },
 
     /**
-     * Fetch player stats from the HIGH-RELIABILITY Site API.
-     * This is the same API that powers ESPN.com player cards.
+     * Fetch FULL player stats from the high-reliability Site API.
+     * Uses the /stats endpoint to get the complete dictionary of metrics.
      */
     async fetchPlayerStats(playerId) {
         try {
-            // Site API Summary endpoint (More reliable than Core API)
-            const url = `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${playerId}`;
+            const url = `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${playerId}/stats`;
             const statsRes = await fetch(url);
             if (!statsRes.ok) return null;
 
             const data = await statsRes.json();
-            const athlete = data.athlete || {};
-            const statsArray = athlete.statsSummary?.statistics || [];
+            
+            // This endpoint has a 'categories' array. We usually want 'averages'.
+            const categories = data.categories || [];
+            const avgCategory = categories.find(c => c.name === 'averages') || categories[0];
+            if (!avgCategory || !avgCategory.statistics || !avgCategory.statistics[0]) return null;
+
+            const names = avgCategory.names || [];
+            const values = avgCategory.statistics[0].stats || [];
 
             let nameMap = {};
-            statsArray.forEach(s => {
-                nameMap[s.name] = parseFloat(s.value) || 0;
+            names.forEach((name, idx) => {
+                nameMap[name] = parseFloat(values[idx]) || 0;
             });
 
-            // If primary stats are missing, check if they are buried in another array
-            if (!nameMap['avgPoints'] && !nameMap['points']) return null;            return {
+            // Ensure we have at least PPG and GP to call it 'real stats'
+            if (!nameMap['avgPoints'] && !nameMap['points']) return null;
+
+            return {
                 // Core production
                 ppg: nameMap['avgPoints'] || nameMap['points'] || 0,
                 rpg: nameMap['avgRebounds'] || nameMap['rebounds'] || 0,
@@ -149,7 +156,7 @@ const api = {
                 defRebRate: nameMap['defReboundRate'] || 0,
                 rebRate: nameMap['reboundRate'] || 0,
 
-                // Per-48 stats (for deriving advanced metrics)
+                // Per-48 stats
                 pts48: nameMap['avg48Points'] || 0,
                 reb48: nameMap['avg48Rebounds'] || 0,
                 ast48: nameMap['avg48Assists'] || 0,
@@ -157,17 +164,24 @@ const api = {
                 blk48: nameMap['avg48Blocks'] || 0,
                 tov48: nameMap['avg48Turnovers'] || 0,
 
-                // Efficiency
-                scoringEfficiency: nameMap['scoringEfficiency'] || 0,
-                shootingEfficiency: nameMap['shootingEfficiency'] || 0,
-                estimatedPossessions: nameMap['avgEstimatedPossessions'] || 0,
-
-                // Totals (for derived calcs)
+                // Totals
                 totalPoints: nameMap['points'] || 0,
                 totalRebounds: nameMap['totalRebounds'] || nameMap['rebounds'] || 0,
                 totalAssists: nameMap['assists'] || 0,
                 totalSteals: nameMap['steals'] || 0,
                 totalBlocks: nameMap['blocks'] || 0,
+                totalTurnovers: nameMap['totalTurnovers'] || nameMap['turnovers'] || 0,
+                
+                // Misc
+                doubleDouble: nameMap['doubleDouble'] || 0,
+                tripleDouble: nameMap['tripleDouble'] || 0,
+                estimatedPossessions: nameMap['avgEstimatedPossessions'] || nameMap['estimatedPossessions'] || 0
+            };
+        } catch (error) {
+            console.warn(`[Stats] Full fetch failed for ${playerId}:`, error.message);
+            return null;
+        }
+    },
                 totalTurnovers: nameMap['totalTurnovers'] || nameMap['turnovers'] || 0,
 
                 // Doubles
