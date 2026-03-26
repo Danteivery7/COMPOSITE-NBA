@@ -9,37 +9,37 @@ const app = {
         console.log('[CompositeNBA] Initializing...');
         
         // Fast-path: Load cache before anything else
-        store.loadCache();
+        window.store.loadCache();
 
-        ui.init();
+        window.ui.init();
 
         // Subscribe to state changes
-        store.subscribe((key) => {
-            if (key === 'games') ui.renderLiveGames(store.state.games);
+        window.store.subscribe((key) => {
+            if (key === 'games') window.ui.renderLiveGames(window.store.state.games);
             if (key === 'rankings') {
-                ui.renderRankings(store.state.teamRankings);
-                ui.renderPredictorSetup();
+                window.ui.renderRankings(window.store.state.teamRankings);
+                window.ui.renderPredictorSetup();
             }
-            if (key === 'teams') ui.renderTeamsList(store.state.teams);
-            if (key === 'players') ui.renderPlayersList(store.state.players);
+            if (key === 'teams') window.ui.renderTeamsList(window.store.state.teams);
+            if (key === 'players') window.ui.renderPlayersList(window.store.state.players);
             if (key === 'loading') {
                 // Only show loading progress if we don't have cached data yet
-                if (!store.state.cacheLoaded) ui.renderLoadingProgress();
+                if (!window.store.state.cacheLoaded) window.ui.renderLoadingProgress();
             }
         });
 
         // ---- INSTANT RENDER from cache ----
-        if (store.state.cacheLoaded) {
+        if (window.store.state.cacheLoaded) {
             console.log('[CompositeNBA] Rendering cached data instantly...');
             // Re-run models to ensure derived state (ratings) are available from the raw cached stats
-            models.updateAllPlayers();
-            models.updateTeamRankings();
+            window.models.updateAllPlayers();
+            window.models.updateTeamRankings();
 
-            ui.renderLiveGames(store.state.games || []);
-            ui.renderRankings(store.state.teamRankings);
-            ui.renderTeamsList(store.state.teams);
-            ui.renderPlayersList(store.state.players);
-            ui.renderPredictorSetup();
+            window.ui.renderLiveGames(window.store.state.games || []);
+            window.ui.renderRankings(window.store.state.teamRankings);
+            window.ui.renderTeamsList(window.store.state.teams);
+            window.ui.renderPlayersList(window.store.state.players);
+            window.ui.renderPredictorSetup();
         }
 
         // ---- Background refresh (non-blocking) ----
@@ -55,43 +55,43 @@ const app = {
     },
 
     async fetchBaseData() {
-        ui.setSyncing(true);
+        window.ui.setSyncing(true);
         try {
             // Parallel fetch teams + scoreboard
             const [games, teams] = await Promise.all([
-                api.fetchScoreboard(),
-                api.fetchTeams()
+                window.api.fetchScoreboard(),
+                window.api.fetchTeams()
             ]);
 
-            store.setGames(games);
-            store.setTeams(teams);
+            window.store.setGames(games);
+            window.store.setTeams(teams);
 
             // Fetch team profile stats + Core API detailed stats — all 30 in parallel
             const [teamProfiles, teamDetailedStats] = await Promise.all([
-                Promise.all(teams.map(t => api.fetchTeamStats(t.id))),
-                Promise.all(teams.map(t => api.fetchTeamStatistics(t.id)))
+                Promise.all(teams.map(t => window.api.fetchTeamStats(t.id))),
+                Promise.all(teams.map(t => window.api.fetchTeamStatistics(t.id)))
             ]);
 
             teamProfiles.forEach((profile, idx) => {
-                if (profile) store.setTeamStats(teams[idx].id, profile);
+                if (profile) window.store.setTeamStats(teams[idx].id, profile);
             });
 
             teamDetailedStats.forEach((stats, idx) => {
-                if (stats) store.state.teamDetailedStats[teams[idx].id] = stats;
+                if (stats) window.store.state.teamDetailedStats[teams[idx].id] = stats;
             });
 
             // Generate initial rankings
-            models.updateTeamRankings();
+            window.models.updateTeamRankings();
 
             // Fetch ALL rosters
             await this.fetchAllRosters(teams);
 
             // Final save to cache
-            store.saveCache();
+            window.store.saveCache();
         } catch (e) {
             console.error('[CompositeNBA] Critical boot failure:', e);
         } finally {
-            ui.setSyncing(false);
+            window.ui.setSyncing(false);
         }
     },
 
@@ -99,20 +99,20 @@ const app = {
      * Fetch all 30 rosters in batches of 10 (faster than 6).
      */
     async fetchAllRosters(teams) {
-        store.updateLoadingProgress('rosters', 0, teams.length, 'loading');
+        window.store.updateLoadingProgress('rosters', 0, teams.length, 'loading');
         let loaded = 0;
         const BATCH = 10;
 
         for (let i = 0; i < teams.length; i += BATCH) {
             const batch = teams.slice(i, i + BATCH);
-            const results = await Promise.all(batch.map(t => api.fetchTeamRoster(t.id)));
+            const results = await Promise.all(batch.map(t => window.api.fetchTeamRoster(t.id)));
 
             batch.forEach((t, j) => {
                 if (results[j]) {
-                    store.setRoster(t.id, results[j]);
+                    window.store.setRoster(t.id, results[j]);
                 }
                 loaded++;
-                store.updateLoadingProgress('rosters', loaded, teams.length, 'loading');
+                window.store.updateLoadingProgress('rosters', loaded, teams.length, 'loading');
             });
 
             if (i + BATCH < teams.length) {
@@ -120,13 +120,13 @@ const app = {
             }
         }
 
-        store.updateLoadingProgress('rosters', teams.length, teams.length, 'done');
+        window.store.updateLoadingProgress('rosters', teams.length, teams.length, 'done');
         console.log(`[CompositeNBA] All ${teams.length} rosters loaded.`);
 
         // Build player list with estimated stats first
-        models.updateAllPlayers();
-        models.updateTeamRankings();
-        console.log(`[CompositeNBA] ${store.state.players.length} players aggregated.`);
+        window.models.updateAllPlayers();
+        window.models.updateTeamRankings();
+        console.log(`[CompositeNBA] ${window.store.state.players.length} players aggregated.`);
 
         // Fetch real player stats in parallel
         this.fetchPlayerStatsInParallel();
@@ -136,7 +136,7 @@ const app = {
      * Fetch real stats for all players using parallel batches of 8.
      */
     async fetchPlayerStatsInParallel() {
-        const rosters = store.state.rosters;
+        const rosters = window.store.state.rosters;
         let allPlayerEntries = [];
 
         Object.keys(rosters).forEach(teamId => {
@@ -148,18 +148,18 @@ const app = {
         });
 
         console.log(`[CompositeNBA] Starting parallel stats fetch for ${allPlayerEntries.length} players...`);
-        store.updateLoadingProgress('playerStats', 0, allPlayerEntries.length, 'loading');
+        window.store.updateLoadingProgress('playerStats', 0, allPlayerEntries.length, 'loading');
 
-        const results = await api.fetchPlayerStatsParallel(
+        const results = await window.api.fetchPlayerStatsParallel(
             allPlayerEntries,
             (fetched, total) => {
-                store.updateLoadingProgress('playerStats', fetched, total, 'loading');
+                window.store.updateLoadingProgress('playerStats', fetched, total, 'loading');
             },
             (batchResults) => {
                 // Apply stats incrementally
                 Object.keys(batchResults).forEach(playerId => {
                     const { stats, teamId } = batchResults[playerId];
-                    const rosterObj = store.state.rosters[teamId];
+                    const rosterObj = window.store.state.rosters[teamId];
                     if (rosterObj && rosterObj.athletes) {
                         const athlete = rosterObj.athletes.find(a => String(a.id) === String(playerId));
                         if (athlete && stats) {
@@ -169,22 +169,22 @@ const app = {
                 });
                 
                 // Trigger UI refresh every 25 players to show progress
-                const fetchedCount = store.state.loadingProgress.playerStats.current || 0;
+                const fetchedCount = window.store.state.loadingProgress.playerStats.current || 0;
                 if (fetchedCount % 25 === 0) {
-                    models.updateAllPlayers();
-                    models.updateTeamRankings();
-                    ui.renderTeamRankings();
-                    if (ui.currentView === 'players') ui.renderPlayers();
+                    window.models.updateAllPlayers();
+                    window.models.updateTeamRankings();
+                    window.ui.renderTeamRankings();
+                    if (window.ui.currentView === 'players') window.ui.renderPlayers();
                 }
             }
         );
 
         // 3. Final Model Update & UI Refresh
-        window.store.updateLoadingProgress('playerStats', allPlayerEntries.length, allPlayerEntries.length, 'done');
-        window.models.updateAllPlayers();
-        window.models.updateTeamRankings();
-        window.ui.renderTeamRankings();
-        if (window.ui.currentView === 'players') window.ui.renderPlayers();
+        window.window.store.updateLoadingProgress('playerStats', allPlayerEntries.length, allPlayerEntries.length, 'done');
+        window.window.models.updateAllPlayers();
+        window.window.models.updateTeamRankings();
+        window.window.ui.renderTeamRankings();
+        if (window.window.ui.currentView === 'players') window.window.ui.renderPlayers();
 
         console.log(`[CompositeNBA] Stats sync complete: ${allPlayerEntries.length} players tracked.`);
     },
@@ -196,14 +196,14 @@ const app = {
         let pollInterval = null;
 
         const poll = async () => {
-            const games = await api.fetchScoreboard();
-            if (games && games.length) store.setGames(games);
+            const games = await window.api.fetchScoreboard();
+            if (games && games.length) window.store.setGames(games);
 
             // If a specific game detail is open, refresh it too
-            if (store.state.activeGameId) {
-                const summary = await api.fetchGameSummary(store.state.activeGameId);
+            if (window.store.state.activeGameId) {
+                const summary = await window.api.fetchGameSummary(window.store.state.activeGameId);
                 if (summary) {
-                    ui.updateGameDetailContent(summary);
+                    window.ui.updateGameDetailContent(summary);
                 }
             }
 
@@ -223,14 +223,14 @@ const app = {
     async refreshTeamsAndRosters() {
         console.log('[CompositeNBA] Periodic refresh...');
         try {
-            const teams = await api.fetchTeams();
+            const teams = await window.api.fetchTeams();
             if (teams && teams.length) {
-                store.setTeams(teams);
+                window.store.setTeams(teams);
 
-                const profiles = await Promise.all(teams.map(t => api.fetchTeamStats(t.id)));
-                profiles.forEach((p, i) => { if (p) store.setTeamStats(teams[i].id, p); });
+                const profiles = await Promise.all(teams.map(t => window.api.fetchTeamStats(t.id)));
+                profiles.forEach((p, i) => { if (p) window.store.setTeamStats(teams[i].id, p); });
 
-                models.updateTeamRankings();
+                window.models.updateTeamRankings();
                 await this.fetchAllRosters(teams);
             }
         } catch (e) {

@@ -40,7 +40,7 @@ const models = {
      * Compute league-wide and role-specific min/max for all stat keys from all players with real stats.
      */
     computeLeagueStats() {
-        const rosters = window.store.state.rosters;
+        const rosters = window.window.store.state.rosters;
         const allStats = [];
         const roleStatsMap = { guard: [], wing: [], big: [] };
 
@@ -88,8 +88,8 @@ const models = {
             return bounds;
         };
 
-        window.store.state.leagueStats = buildBounds(allStats);
-        window.store.state.roleStats = {
+        window.window.store.state.leagueStats = buildBounds(allStats);
+        window.window.store.state.roleStats = {
             guard: buildBounds(roleStatsMap.guard),
             wing: buildBounds(roleStatsMap.wing),
             big: buildBounds(roleStatsMap.big)
@@ -99,14 +99,14 @@ const models = {
 
     /** Get normalized value for a stat, using league min/max */
     normStat(value, key, inverse = false) {
-        const ls = store.state.leagueStats[key];
+        const ls = window.store.state.leagueStats[key];
         if (!ls) return 0.5; // Fallback if no league data
         return inverse ? this.normInverse(value, ls.min, ls.max) : this.norm(value, ls.min, ls.max);
     },
 
     /** Get normalized value for a stat against a specific role */
     normRole(value, key, role, inverse = false) {
-        const rs = store.state.roleStats?.[role]?.[key];
+        const rs = window.store.state.roleStats?.[role]?.[key];
         if (!rs) return 0.5;
         return inverse ? this.normInverse(value, rs.min, rs.max) : this.norm(value, rs.min, rs.max);
     },
@@ -634,8 +634,8 @@ const models = {
      * Computes: Team Offense, Defense, Results, Schedule/Context, Roster Strength.
      */
     updateTeamRankings() {
-        const teams = store.state.teams;
-        const teamStatsMap = store.state.teamStats;
+        const teams = window.store.state.teams;
+        const teamStatsMap = window.store.state.teamStats;
 
         // First pass: gather base stats for ALL teams
         let rankings = [];
@@ -670,7 +670,7 @@ const models = {
 
         rankings.forEach(r => {
             const teamId = r.id;
-            const roster = store.state.players.filter(p => String(p.teamId) === String(teamId));
+            const roster = window.store.state.players.filter(p => String(p.teamId) === String(teamId));
 
             // Sort by overall rating
             const sorted = roster.slice()
@@ -830,7 +830,7 @@ const models = {
         rankings.sort((a, b) => parseFloat(b.stats.ovrRating) - parseFloat(a.stats.ovrRating));
         rankings = rankings.map((r, i) => ({ ...r, rank: i + 1 }));
 
-        store.setRankings(rankings);
+        window.store.setRankings(rankings);
     },
 
 
@@ -844,8 +844,8 @@ const models = {
         // CRITICAL: compute league-wide bounds before rating anyone
         this.computeLeagueStats();
 
-        const rosters = store.state.rosters;
-        const teams = store.state.teams;
+        const rosters = window.store.state.rosters;
+        const teams = window.store.state.teams;
         let allPlayers = [];
 
         const teamLookup = {};
@@ -861,7 +861,7 @@ const models = {
             const rosterObj = rosters[teamId];
             if (!rosterObj || !rosterObj.athletes) return;
 
-            const teamProfile = store.state.teamStats[teamId];
+            const teamProfile = window.store.state.teamStats[teamId];
             const tStats = teamProfile ? this.generateAdvancedTeamStats(teamProfile) : null;
             const teamInfo = teamLookup[teamId] || { abbreviation: '???', displayName: 'Unknown', logo: '' };
 
@@ -879,7 +879,7 @@ const models = {
         });
 
         allPlayers.sort((a, b) => b.rating.ratingNum - a.rating.ratingNum);
-        store.setAllPlayers(allPlayers);
+        window.store.setAllPlayers(allPlayers);
     },
 
     /**

@@ -65,9 +65,9 @@ const ui = {
         window.scrollTo(0, 0);
 
         // Clear active game detail tracking if switching away from detail
-        if (tabId !== 'game-detail') store.state.activeGameId = null;
-        if (tabId !== 'team-detail') store.state.activeTeamId = null;
-        if (tabId !== 'player-detail') store.state.activePlayerId = null;
+        if (tabId !== 'game-detail') window.store.state.activeGameId = null;
+        if (tabId !== 'team-detail') window.store.state.activeTeamId = null;
+        if (tabId !== 'player-detail') window.store.state.activePlayerId = null;
 
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll(`.nav-btn[data-tab="${tabId}"]`).forEach(b => b.classList.add('active'));
@@ -85,14 +85,14 @@ const ui = {
 
         // Trigger renders on tab switch
         if (tabId === 'rankings') {
-            this.renderRankings(store.state.teamRankings);
+            this.renderRankings(window.store.state.teamRankings);
             this.renderPredictorSetup();
         } else if (tabId === 'teams') {
-            this.renderTeamsList(store.state.teams);
+            this.renderTeamsList(window.store.state.teams);
         } else if (tabId === 'players') {
-            this.renderPlayersList(store.state.players);
+            this.renderPlayersList(window.store.state.players);
         } else if (tabId === 'live') {
-            this.renderLiveGames(store.state.games);
+            this.renderLiveGames(window.store.state.games);
         } else if (tabId === 'favorites') {
             this.renderFavorites();
         }
@@ -109,14 +109,14 @@ const ui = {
 
     bindTheme() {
         document.getElementById('theme-toggle').addEventListener('click', () => {
-            store.toggleTheme();
+            window.store.toggleTheme();
         });
 
         const rankingSort = document.getElementById('ranking-sort');
         if (rankingSort) {
             rankingSort.addEventListener('change', (e) => {
                 const sortBy = e.target.value;
-                const rankings = [...store.state.teamRankings];
+                const rankings = [...window.store.state.teamRankings];
                 if (sortBy === 'ovr') {
                     rankings.sort((a, b) => parseFloat(b.stats.ovrRating) - parseFloat(a.stats.ovrRating));
                 } else if (sortBy === 'off') {
@@ -146,8 +146,8 @@ const ui = {
         const presetSelect = document.getElementById('settings-preset');
         if (presetSelect) {
             presetSelect.addEventListener('change', (e) => {
-                store.setPreset(e.target.value);
-                models.updateTeamRankings();
+                window.store.setPreset(e.target.value);
+                window.models.updateTeamRankings();
             });
         }
     },
@@ -157,10 +157,10 @@ const ui = {
         const teamFilter = document.getElementById('player-team-filter');
 
         if (posFilter) {
-            posFilter.addEventListener('change', () => this.renderPlayersList(store.state.players));
+            posFilter.addEventListener('change', () => this.renderPlayersList(window.store.state.players));
         }
         if (teamFilter) {
-            teamFilter.addEventListener('change', () => this.renderPlayersList(store.state.players));
+            teamFilter.addEventListener('change', () => this.renderPlayersList(window.store.state.players));
         }
     },
 
@@ -285,7 +285,7 @@ const ui = {
         panel.innerHTML = '<div style="text-align:center; padding:16px; color:var(--text-tertiary); font-size:12px;">Loading game details...</div>';
         panel.style.maxHeight = panel.scrollHeight + 'px';
 
-        const summary = await api.fetchGameSummary(gameId);
+        const summary = await window.api.fetchGameSummary(gameId);
         if (!summary) {
             panel.innerHTML = '<div style="text-align:center; padding:16px; color:var(--text-tertiary);">Unable to load details</div>';
             panel.style.maxHeight = panel.scrollHeight + 'px';
@@ -316,7 +316,7 @@ const ui = {
 
         // Get team ratings from our store
         const getTeamRating = (teamId) => {
-            const r = store.state.teamRankings.find(t => String(t.id) === String(teamId));
+            const r = window.store.state.teamRankings.find(t => String(t.id) === String(teamId));
             return r ? r.stats : null;
         };
 
@@ -505,14 +505,14 @@ const ui = {
         if (!pane) return;
 
         // Save active game ID for polling updates
-        store.state.activeGameId = gameId;
+        window.store.state.activeGameId = gameId;
 
         this.switchTab('game-detail');
 
         // Initial loading state
         pane.innerHTML = `
             <div class="back-bar">
-                <button class="back-btn" onclick="ui.goBack()">
+                <button class="back-btn" onclick="window.ui.goBack()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Back to Scores
                 </button>
@@ -523,7 +523,7 @@ const ui = {
             </div>
         `;
 
-        const summary = await api.fetchGameSummary(gameId);
+        const summary = await window.api.fetchGameSummary(gameId);
         if (!summary) {
             pane.innerHTML = '<div style="padding:40px; text-align:center;">Failed to load game summary.</div>';
             return;
@@ -551,7 +551,7 @@ const ui = {
 
         const html = `
             <div class="back-bar">
-                <button class="back-btn" onclick="ui.goBack()">
+                <button class="back-btn" onclick="window.ui.goBack()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Back to Scores
                 </button>
@@ -652,7 +652,7 @@ const ui = {
                                     const pts = parseFloat(statsArray[ptsIdx]) || 0;
                                     
                                     return `
-                                        <tr style="cursor:pointer; ${!isStarter ? 'opacity:0.85;' : ''}" onclick="ui.showPlayerDetail('${a.athlete?.id}')">
+                                        <tr style="cursor:pointer; ${!isStarter ? 'opacity:0.85;' : ''}" onclick="window.ui.showPlayerDetail('${a.athlete?.id}')">
                                             <td class="player-cell">
                                                 <div style="display:flex; flex-direction:column;">
                                                     <span style="font-weight:700;">${a.athlete?.displayName}</span>
@@ -890,7 +890,7 @@ const ui = {
         if (!rankings || rankings.length === 0) return;
 
         tbody.innerHTML = rankings.map((r, i) => `
-            <tr style="cursor:pointer;" onclick="ui.showTeamDetail('${r.id}')">
+            <tr style="cursor:pointer;" onclick="window.ui.showTeamDetail('${r.id}')">
                 <td style="font-weight:800; color:var(--text-tertiary); width:40px;">${i + 1}</td>
                 <td>
                     <div style="display:flex; align-items:center; gap:12px;">
@@ -913,7 +913,7 @@ const ui = {
         if (!teams || teams.length === 0) return;
 
         const rankMap = {};
-        store.state.teamRankings.forEach(r => { rankMap[r.id] = r; });
+        window.store.state.teamRankings.forEach(r => { rankMap[r.id] = r; });
 
         container.innerHTML = teams.map(team => {
             const rk = rankMap[team.id];
@@ -921,7 +921,7 @@ const ui = {
             const record = rk ? `${rk.stats.wins}-${rk.stats.losses}` : '';
 
             return `
-                <div class="card team-card" onclick="ui.showTeamDetail('${team.id}')">
+                <div class="card team-card" onclick="window.ui.showTeamDetail('${team.id}')">
                     <img src="${team.logos?.[0]?.href || ''}" width="48" height="48" style="border-radius:6px;" onerror="this.style.display='none'">
                     <div style="flex:1; min-width:0;">
                         <h3 style="font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${team.displayName}</h3>
@@ -939,19 +939,19 @@ const ui = {
     // ==================== TEAM DETAIL ====================
     async showTeamDetail(teamId) {
         console.log('[UI] Showing team detail:', teamId);
-        const team = store.state.teams.find(t => String(t.id) === String(teamId));
-        const stats = store.state.teamStats[teamId];
+        const team = window.store.state.teams.find(t => String(t.id) === String(teamId));
+        const stats = window.store.state.teamStats[teamId];
         if (!team) return;
 
-        const adv = stats ? models.generateAdvancedTeamStats(stats) : null;
+        const adv = stats ? window.models.generateAdvancedTeamStats(stats) : null;
 
-        const rosterObj = store.state.rosters[teamId] || { athletes: [], coach: 'N/A' };
+        const rosterObj = window.store.state.rosters[teamId] || { athletes: [], coach: 'N/A' };
         const coachName = rosterObj.coach;
 
-        const rankData = store.state.teamRankings.find(r => String(r.id) === String(teamId));
+        const rankData = window.store.state.teamRankings.find(r => String(r.id) === String(teamId));
         const displayStats = rankData ? rankData.stats : adv;
 
-        let roster = store.state.players.filter(p => String(p.teamId) === String(teamId));
+        let roster = window.store.state.players.filter(p => String(p.teamId) === String(teamId));
         roster.sort((a, b) => (b.rating?.ratingNum || 0) - (a.rating?.ratingNum || 0));
 
         const container = document.getElementById('pane-team-detail');
@@ -972,7 +972,7 @@ const ui = {
         container.innerHTML = `
             <div class="pane-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
                 <div style="display:flex; align-items:center; gap:20px;">
-                    <button class="back-btn" onclick="ui.goBack()">← Back</button>
+                    <button class="back-btn" onclick="window.ui.goBack()">← Back</button>
                     <div style="display:flex; align-items:center; gap:14px;">
                         <img src="${team.logos?.[0]?.href || ''}" width="48" height="48" style="border-radius:8px;">
                         <div>
@@ -981,8 +981,8 @@ const ui = {
                         </div>
                     </div>
                 </div>
-                <button class="action-btn" onclick="store.toggleFavorite('team', '${team.id}'); ui.showTeamDetail('${team.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
-                    ${store.state.favorites.teams.includes(String(team.id)) ? '⭐ Favorited' : '☆ Favorite'}
+                <button class="action-btn" onclick="window.store.toggleFavorite('team', '${team.id}'); window.ui.showTeamDetail('${team.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
+                    ${window.store.state.favorites.teams.includes(String(team.id)) ? '⭐ Favorited' : '☆ Favorite'}
                 </button>
             </div>
             ${statsHtml}
@@ -994,7 +994,7 @@ const ui = {
                     <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>OFF</th><th>DEF</th><th>PTS</th><th>REB</th><th>AST</th><th>GP</th><th>Tier</th></tr></thead>
                     <tbody>
                         ${roster.map(p => `
-                            <tr style="cursor:pointer;" onclick="ui.showPlayerDetail('${p.id}')">
+                            <tr style="cursor:pointer;" onclick="window.ui.showPlayerDetail('${p.id}')">
                                 <td>
                                     <div style="display:flex; align-items:center; gap:10px;">
                                         <img src="${p.headshot?.href || ''}" width="30" height="30" style="border-radius:50%; background:var(--bg-elevated); object-fit:cover; flex-shrink:0;">
@@ -1021,7 +1021,7 @@ const ui = {
         this.switchTab('team-detail');
         const scheduleContainer = document.getElementById('team-schedule-container');
         try {
-            const schedule = await api.fetchTeamSchedule(teamId);
+            const schedule = await window.api.fetchTeamSchedule(teamId);
             if (schedule && schedule.length > 0 && scheduleContainer) {
                 scheduleContainer.innerHTML = `
                     <h3 style="font-size:16px; font-weight:700; margin-bottom:12px;">Last 5 Games</h3>
@@ -1052,20 +1052,20 @@ const ui = {
     async showPlayerDetail(playerId) {
         try {
             console.log('showPlayerDetail called for:', playerId);
-            const p = store.state.players.find(x => String(x.id) === String(playerId));
+            const p = window.store.state.players.find(x => String(x.id) === String(playerId));
             if (!p) {
-                console.error('Player not found in store.state.players!', playerId);
+                console.error('Player not found in window.store.state.players!', playerId);
                 return;
             }
             if (!p.rating) {
             console.warn('Player rating is missing! Attempting to generate on the fly...');
-            const rosterAthlete = store.state.rosters[p.teamId]?.athletes?.find(a => String(a.id) === String(playerId));
+            const rosterAthlete = window.store.state.rosters[p.teamId]?.athletes?.find(a => String(a.id) === String(playerId));
             if (rosterAthlete) {
-                p.rating = models.generatePlayerRating(rosterAthlete, store.state.teamStats[p.teamId]);
+                p.rating = window.models.generatePlayerRating(rosterAthlete, window.store.state.teamStats[p.teamId]);
             }
         }
         
-        const team = store.state.teams.find(t => String(t.id) === String(p.teamId));
+        const team = window.store.state.teams.find(t => String(t.id) === String(p.teamId));
         const s = p.rating || { ratingNum: 0, offRating: "0", defRating: "0", pts: "0", reb: "0", ast: "0", stl: "0", blk: "0", gp: 0, mpg: "0" };
         const container = document.getElementById('pane-player-detail');
 
@@ -1098,12 +1098,12 @@ const ui = {
             aiAnalysis = `Composite AI Analysis: Based on real-time data from the current season (${s.gp} games played), ${p.fullName || p.displayName} ${strText}.${wkText} His overall impact score reflects a dynamic ${s.posAbbrev} for the ${team ? team.displayName : 'team'}.`;
         }
 
-        const isFav = (store.state.favorites.players || []).includes(String(p.id));
+        const isFav = (window.store.state.favorites.players || []).includes(String(p.id));
 
         container.innerHTML = `
             <div class="pane-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
-                <button class="back-btn" onclick="ui.goBack()">← Back</button>
-                <button class="action-btn" onclick="store.toggleFavorite('player', '${p.id}'); ui.showPlayerDetail('${p.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
+                <button class="back-btn" onclick="window.ui.goBack()">← Back</button>
+                <button class="action-btn" onclick="window.store.toggleFavorite('player', '${p.id}'); window.ui.showPlayerDetail('${p.id}');" style="background:var(--bg-elevated); border:1px solid var(--border); padding:8px 16px; border-radius:var(--radius-md); color:var(--text-primary); cursor:pointer;">
                     ${isFav ? '⭐ Favorited' : '☆ Favorite'}
                 </button>
             </div>
@@ -1218,13 +1218,13 @@ const ui = {
         const display = filtered.slice(0, TOP_N);
 
         if (countEl) countEl.textContent = `Top ${display.length} of ${players.length} players`;
-        if (tsEl) tsEl.textContent = `Updated: ${this.formatTimestamp(store.state.lastUpdated.players)}`;
+        if (tsEl) tsEl.textContent = `Updated: ${this.formatTimestamp(window.store.state.lastUpdated.players)}`;
 
         // Populate team filter dropdown if empty
         this.populateTeamFilter();
 
         tbody.innerHTML = display.map((p, i) => `
-            <tr style="cursor:pointer;" onclick="ui.showPlayerDetail('${p.id}')">
+            <tr style="cursor:pointer;" onclick="window.ui.showPlayerDetail('${p.id}')">
                 <td style="font-weight:800; color:var(--text-tertiary); width:36px; font-variant-numeric:tabular-nums;">${i + 1}</td>
                 <td>
                     <div style="display:flex; align-items:center; gap:10px;">
@@ -1253,7 +1253,7 @@ const ui = {
         const teamFilter = document.getElementById('player-team-filter');
         if (!teamFilter || teamFilter.options.length > 1) return;
 
-        const teams = store.state.teams.slice().sort((a, b) => a.displayName.localeCompare(b.displayName));
+        const teams = window.store.state.teams.slice().sort((a, b) => a.displayName.localeCompare(b.displayName));
         teams.forEach(t => {
             const opt = document.createElement('option');
             opt.value = t.id;
@@ -1268,8 +1268,8 @@ const ui = {
         const label = document.getElementById('loading-label');
         if (!bar || !label) return;
 
-        const rp = store.state.loadingProgress.rosters;
-        const sp = store.state.loadingProgress.playerStats;
+        const rp = window.store.state.loadingProgress.rosters;
+        const sp = window.store.state.loadingProgress.playerStats;
 
         if (rp.phase === 'loading') {
             const pct = Math.round((rp.loaded / rp.total) * 100);
@@ -1281,8 +1281,8 @@ const ui = {
             label.textContent = `Syncing player stats: ${sp.loaded}/${sp.total}`;
         } else {
             bar.style.width = '100%';
-            label.textContent = store.state.players.length > 0
-                ? `${store.state.players.length} players loaded`
+            label.textContent = window.store.state.players.length > 0
+                ? `${window.store.state.players.length} players loaded`
                 : 'Ready';
         }
     },
@@ -1292,8 +1292,8 @@ const ui = {
         const container = document.getElementById('favorites-container');
         if (!container) return;
 
-        const favTeams = store.state.favorites.teams || [];
-        const favPlayers = store.state.favorites.players || [];
+        const favTeams = window.store.state.favorites.teams || [];
+        const favPlayers = window.store.state.favorites.players || [];
 
         if (favTeams.length === 0 && favPlayers.length === 0) {
             container.innerHTML = '<div class="card" style="padding:40px; text-align:center; color:var(--text-secondary);"><div style="font-size:40px; margin-bottom:12px;">⭐</div>No favorites yet. Star teams and players to see them here.</div>';
@@ -1304,12 +1304,12 @@ const ui = {
         if (favTeams.length > 0) {
             html += '<h3 style="margin-bottom:16px; font-weight:700;">Favorite Teams</h3><div class="teams-grid" style="margin-bottom:32px;">';
             favTeams.forEach(tid => {
-                const team = store.state.teams.find(t => String(t.id) === String(tid));
-                const rankData = store.state.teamRankings.find(r => String(r.id) === String(tid));
+                const team = window.store.state.teams.find(t => String(t.id) === String(tid));
+                const rankData = window.store.state.teamRankings.find(r => String(r.id) === String(tid));
                 if (team) {
                     const stats = rankData ? rankData.stats : null;
                     html += `
-                    <div class="card team-card" onclick="ui.showTeamDetail('${team.id}')" style="display:flex; flex-direction:column; align-items:center;">
+                    <div class="card team-card" onclick="window.ui.showTeamDetail('${team.id}')" style="display:flex; flex-direction:column; align-items:center;">
                         <img src="${team.logos?.[0]?.href || ''}" width="56" height="56" style="margin-bottom:12px;">
                         <span style="font-weight:700; font-size:16px; margin-bottom:4px;">${team.displayName}</span>
                         ${stats ? `<div style="font-size:12px; color:var(--text-secondary);">${stats.wins}-${stats.losses} • <span style="color:var(--brand-accent); font-weight:700;">${stats.ovrRating} OVR</span></div>` : ''}
@@ -1322,11 +1322,11 @@ const ui = {
         if (favPlayers.length > 0) {
             html += '<h3 style="margin-bottom:16px; font-weight:700;">Favorite Players</h3><div class="teams-grid" style="margin-bottom:32px; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));">';
             favPlayers.forEach(pid => {
-                const p = store.state.players.find(x => String(x.id) === String(pid));
+                const p = window.store.state.players.find(x => String(x.id) === String(pid));
                 if (p && p.rating) {
                     const s = p.rating;
                     html += `
-                    <div class="card team-card" onclick="ui.showPlayerDetail('${p.id}')" style="display:flex; flex-direction:column; align-items:center; position:relative;">
+                    <div class="card team-card" onclick="window.ui.showPlayerDetail('${p.id}')" style="display:flex; flex-direction:column; align-items:center; position:relative;">
                         <div style="position:absolute; top:12px; right:12px; font-size:18px; font-weight:900; color:${s.rating >= 90 ? '#f1c40f' : s.rating >= 80 ? '#3498db' : 'var(--text-secondary)'};">${s.rating}</div>
                         <img src="${p.headshot?.href || ''}" width="80" height="60" style="object-fit:contain; margin-bottom:12px;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 30 30%22><rect fill=%22transparent%22 width=%2230%22 height=%2230%22/></svg>'">
                         <span style="font-weight:700; font-size:14px; text-align:center;">${p.fullName || p.displayName}</span>
@@ -1344,7 +1344,7 @@ const ui = {
     renderPredictorSetup() {
         const container = document.querySelector('.predictor-container');
         if (!container) return;
-        const rankings = store.state.teamRankings;
+        const rankings = window.store.state.teamRankings;
 
         if (!rankings.length) {
             container.innerHTML = '<div class="card" style="padding:32px; text-align:center; color:var(--text-secondary);">Loading team data...</div>';
