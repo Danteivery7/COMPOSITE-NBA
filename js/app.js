@@ -43,15 +43,19 @@ const app = {
         }
 
         // ---- Background refresh (non-blocking) ----
+        // 1. Initial trigger — run immediately on boat
         this.fetchBaseData();
 
-        // Smart polling for live games
+        // 2. Smart polling for live games (every 10s-60s)
         this.startLivePolling();
 
-        // Periodic team/roster refresh every 15 minutes
-        setInterval(() => this.refreshTeamsAndRosters(), 15 * 60000);
+        // 3. Periodic full refresh every 5 minutes (24/7 sync)
+        setInterval(() => {
+            console.log('[App] 5-minute 24/7 sync triggered...');
+            this.refreshTeamsAndRosters();
+        }, 5 * 60000);
 
-        console.log('[CompositeNBA] Boot complete.');
+        console.log('[CompositeNBA] Boot complete & 24/7 sync armed.');
     },
 
     async fetchBaseData() {
