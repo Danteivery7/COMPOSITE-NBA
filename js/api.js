@@ -102,14 +102,24 @@ const api = {
             
             let nameMap = {};
             
-            // Aggressively search ALL categories for stats (Averages, Totals, etc.)
+            // PRIORITY 1: Averages (the stats we actually use for ratings)
+            const avgCat = categories.find(c => c.name === 'averages');
+            if (avgCat && avgCat.statistics && avgCat.statistics[0]) {
+                const names = avgCat.names || [];
+                const values = avgCat.statistics[0].stats || [];
+                names.forEach((name, idx) => {
+                    nameMap[name] = parseFloat(values[idx]) || 0;
+                });
+            }
+
+            // PRIORITY 2: Totals and other categories (fill in the gaps, don't overwrite averages)
             categories.forEach(cat => {
+                if (cat.name === 'averages') return;
                 const names = cat.names || [];
                 const statistics = cat.statistics || [];
                 if (statistics[0] && statistics[0].stats) {
                     const values = statistics[0].stats;
                     names.forEach((name, idx) => {
-                        // Store it in the map if it's not already there (prefer first occurrence)
                         if (nameMap[name] === undefined) {
                             nameMap[name] = parseFloat(values[idx]) || 0;
                         }
@@ -117,10 +127,10 @@ const api = {
                 }
             });
 
-            // Failsafe for missing keys (Site API sometimes uses different names)
+            // Failsafe for missing keys
             const getStat = (keys) => {
                 for (let k of keys) {
-                    if (nameMap[k] !== undefined && nameMap[k] !== 0) return nameMap[k];
+                    if (nameMap[k] !== undefined) return nameMap[k];
                 }
                 return 0;
             };
@@ -128,42 +138,47 @@ const api = {
             const ppg = getStat(['avgPoints', 'points', 'avgPts']);
             if (ppg === 0 && !nameMap['gamesPlayed']) return null;
 
+            const apg = getStat(['avgAssists', 'assists', 'avgAst']);
+            const tovPg = getStat(['avgTurnovers', 'turnovers', 'avgTov']);
+            const spg = getStat(['avgSteals', 'steals', 'avgStl']);
+            const bpg = getStat(['avgBlocks', 'blocks', 'avgBlk']);
+            const mpg = getStat(['avgMinutes', 'minutes', 'mpg']);
+
+            // Build the EXACT object models.js expects
             return {
-                // Core production
                 ppg: ppg,
                 rpg: getStat(['avgRebounds', 'rebounds', 'avgReb']),
-                apg: getStat(['avgAssists', 'assists', 'avgAst']),
-                spg: getStat(['avgSteals', 'steals', 'avgStl']),
-                bpg: getStat(['avgBlocks', 'blocks', 'avgBlk']),
-                tovPg: getStat(['avgTurnovers', 'turnovers', 'avgTov']),
+                apg: apg,
+                spg: spg,
+                bpg: bpg,
+                tovPg: tovPg,
                 foulsPg: getStat(['avgFouls', 'fouls']),
-                mpg: getStat(['avgMinutes', 'minutes', 'mpg']),
+                mpg: mpg,
                 gp: getStat(['gamesPlayed', 'gp']),
                 gs: getStat(['gamesStarted', 'gs']),
                 
-                // Efficiency
-                fgPct: getStat(['fieldGoalPct', 'fgPct', 'fg%']),
-                threePtPct: getStat(['threePointFieldGoalPct', 'threePointPct', '3p%']),
-                ftPct: getStat(['freeThrowPct', 'ftPct', 'ft%']),
-                efgPct: getStat(['effectiveFGPct', 'efgPct']),
-                tsPct: getStat(['trueShootingPct', 'tsPct']),
+                // Efficiency (Must match models.js keys exactly)
+                fgPct: getStat(['fieldGoalPct', 'fg%']),
+                threePct: getStat(['threePointFieldGoalPct', 'threePointPct', '3p%']), // models.js uses 'threePct'
+                ftPct: getStat(['freeThrowPct', 'ft%']),
+                efgPct: getStat(['effectiveFGPct', 'efg%']),
+                tsPct: getStat(['trueShootingPct', 'ts%']) || 55,
                 
                 // Volume
-                fga: getStat(['avgFieldGoalsAttempted', 'fieldGoalsAttempted', 'fga']),
-                fgm: getStat(['avgFieldGoalsMade', 'fieldGoalsMade', 'fgm']),
-                fta: getStat(['avgFreeThrowsAttempted', 'freeThrowsAttempted', 'fta']),
-                ftm: getStat(['avgFreeThrowsMade', 'freeThrowsMade', 'ftm']),
-                threePA: getStat(['avgThreePointFieldGoalsAttempted', 'threePointFieldGoalsAttempted', '3pa']),
-                threePM: getStat(['avgThreePointFieldGoalsMade', 'threePointFieldGoalsMade', '3pm']),
+                fga: getStat(['avgFieldGoalsAttempted', 'fga']),
+                fta: getStat(['avgFreeThrowsAttempted', 'fta']),
 
-                // Advanced
-                per: getStat(['PER', 'per']),
-                usage: getStat(['usageRate', 'usage']),
+                // Advanced / Derived
+                per: getStat(['PER', 'per']) || 15,
+                usage: getStat(['usageRate', 'usage']) || 20,
                 vorp: getStat(['VORP', 'vorp']),
-                ortg: getStat(['offensiveRating', 'ortg']),
-                drtg: getStat(['defensiveRating', 'drtg']),
+                plusMinus: getStat(['plusMinus', 'avgPlusMinus']),
                 assistRatio: getStat(['assistRatio']),
-                estimatedPossessions: getStat(['avgEstimatedPossessions', 'estimatedPossessions'])
+                astTovRatio: nameMap['assistTurnoverRatio'] || (apg / (tovPg || 0.1)),
+                defRebPg: getStat(['avgDefensiveRebounds', 'defensiveRebounds']),
+                stl48: nameMap['avg48Steals'] || (spg / (mpg || 30) * 48),
+                blk48: nameMap['avg48Blocks'] || (bpg / (mpg || 30) * 48),
+                estimatedPossessions: getStat(['avgEstimatedPossessions', 'estimatedPossessions']) || (mpg * 2)
             };
         } catch (error) {
             console.warn(`[Stats] Full fetch failed for ${playerId}:`, error.message);
