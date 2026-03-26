@@ -222,8 +222,23 @@ const store = {
     saveState() {
         localStorage.setItem('nbaCompFavs', JSON.stringify(this.state.favorites));
         localStorage.setItem('nbaCompSettings', JSON.stringify(this.state.settings));
+    },
+
+    setLastUpdated(key) {
+        if (this.state.lastUpdated && this.state.lastUpdated[key] !== undefined) {
+            this.state.lastUpdated[key] = Date.now();
+            this.saveCache();
+            this.notify('lastUpdated');
+        }
+    },
+
+    updateLoadingProgress(type, current, total, phase) {
+        if (this.state.loadingProgress[type]) {
+            this.state.loadingProgress[type] = { current, total, phase };
+            this.notify('loading');
+        }
     }
 };
 
 window.store = store;
-store.init();
+window.store.init();

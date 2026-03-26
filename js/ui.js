@@ -35,7 +35,23 @@ const ui = {
         const el = document.getElementById('sync-indicator');
         if (el) {
             if (isSyncing) el.classList.remove('hidden');
-            else el.classList.add('hidden');
+            else {
+                el.classList.add('hidden');
+                this.renderLastUpdated();
+            }
+        }
+    },
+
+    renderLastUpdated() {
+        const playerTs = document.getElementById('player-timestamp');
+        const lastSync = window.store.state.lastUpdated.players || window.store.state.lastUpdated.teams || 0;
+        
+        if (lastSync > 0) {
+            const timeStr = new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (playerTs) playerTs.textContent = `Last Updated: ${timeStr}`;
+            
+            // Also show a toast or a small label in the header if desired
+            console.log(`[UI] Data last updated at ${timeStr}`);
         }
     },
 

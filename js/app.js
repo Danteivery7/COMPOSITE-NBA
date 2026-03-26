@@ -181,6 +181,8 @@ const app = {
             console.log('[App] Performing final rating calculation...');
             window.models.updateAllPlayers();
             window.models.updateTeamRankings();
+            window.store.setLastUpdated('players');
+            window.store.setLastUpdated('teams');
             window.ui.renderTeamRankings();
             if (window.ui.currentView === 'players') window.ui.renderPlayers();
             console.log(`[CompositeNBA] Stats sync complete: ${allPlayerEntries.length} players tracked.`);
