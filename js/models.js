@@ -64,7 +64,11 @@ const models = {
             });
         });
 
-        if (allStats.length < 10) return; // Not enough data
+        // Proceed with normalization even with small datasets for instant superstar restoration
+        if (allStats.length === 0) {
+            console.warn('[Models] No players with realStats found for normalization baseline.');
+            return;
+        }
 
         const keys = Object.keys(allStats[0] || {});
         

@@ -98,84 +98,72 @@ const api = {
             if (!statsRes.ok) return null;
 
             const data = await statsRes.json();
-            
-            // This endpoint has a 'categories' array. We usually want 'averages'.
             const categories = data.categories || [];
-            const avgCategory = categories.find(c => c.name === 'averages') || categories[0];
-            if (!avgCategory || !avgCategory.statistics || !avgCategory.statistics[0]) return null;
-
-            const names = avgCategory.names || [];
-            const values = avgCategory.statistics[0].stats || [];
-
+            
             let nameMap = {};
-            names.forEach((name, idx) => {
-                nameMap[name] = parseFloat(values[idx]) || 0;
+            
+            // Aggressively search ALL categories for stats (Averages, Totals, etc.)
+            categories.forEach(cat => {
+                const names = cat.names || [];
+                const statistics = cat.statistics || [];
+                if (statistics[0] && statistics[0].stats) {
+                    const values = statistics[0].stats;
+                    names.forEach((name, idx) => {
+                        // Store it in the map if it's not already there (prefer first occurrence)
+                        if (nameMap[name] === undefined) {
+                            nameMap[name] = parseFloat(values[idx]) || 0;
+                        }
+                    });
+                }
             });
 
-            // Ensure we have at least PPG and GP to call it 'real stats'
-            if (!nameMap['avgPoints'] && !nameMap['points']) return null;
+            // Failsafe for missing keys (Site API sometimes uses different names)
+            const getStat = (keys) => {
+                for (let k of keys) {
+                    if (nameMap[k] !== undefined && nameMap[k] !== 0) return nameMap[k];
+                }
+                return 0;
+            };
+
+            const ppg = getStat(['avgPoints', 'points', 'avgPts']);
+            if (ppg === 0 && !nameMap['gamesPlayed']) return null;
 
             return {
                 // Core production
-                ppg: nameMap['avgPoints'] || nameMap['points'] || 0,
-                rpg: nameMap['avgRebounds'] || nameMap['rebounds'] || 0,
-                apg: nameMap['avgAssists'] || nameMap['assists'] || 0,
-                spg: nameMap['avgSteals'] || nameMap['steals'] || 0,
-                bpg: nameMap['avgBlocks'] || nameMap['blocks'] || 0,
-                tovPg: nameMap['avgTurnovers'] || nameMap['turnovers'] || 0,
-                foulsPg: nameMap['avgFouls'] || 0,
-                mpg: nameMap['avgMinutes'] || nameMap['minutes'] || 0,
-                gp: nameMap['gamesPlayed'] || 0,
-                gs: nameMap['gamesStarted'] || 0,
+                ppg: ppg,
+                rpg: getStat(['avgRebounds', 'rebounds', 'avgReb']),
+                apg: getStat(['avgAssists', 'assists', 'avgAst']),
+                spg: getStat(['avgSteals', 'steals', 'avgStl']),
+                bpg: getStat(['avgBlocks', 'blocks', 'avgBlk']),
+                tovPg: getStat(['avgTurnovers', 'turnovers', 'avgTov']),
+                foulsPg: getStat(['avgFouls', 'fouls']),
+                mpg: getStat(['avgMinutes', 'minutes', 'mpg']),
+                gp: getStat(['gamesPlayed', 'gp']),
+                gs: getStat(['gamesStarted', 'gs']),
                 
                 // Efficiency
-                fgPct: nameMap['fieldGoalPct'] || 0,
-                threePtPct: nameMap['threePointFieldGoalPct'] || 0,
-                ftPct: nameMap['freeThrowPct'] || 0,
-                efgPct: nameMap['effectiveFGPct'] || 0,
-                tsPct: nameMap['trueShootingPct'] || 0,
+                fgPct: getStat(['fieldGoalPct', 'fgPct', 'fg%']),
+                threePtPct: getStat(['threePointFieldGoalPct', 'threePointPct', '3p%']),
+                ftPct: getStat(['freeThrowPct', 'ftPct', 'ft%']),
+                efgPct: getStat(['effectiveFGPct', 'efgPct']),
+                tsPct: getStat(['trueShootingPct', 'tsPct']),
                 
                 // Volume
-                fga: nameMap['avgFieldGoalsAttempted'] || nameMap['fieldGoalsAttempted'] || 0,
-                fgm: nameMap['avgFieldGoalsMade'] || nameMap['fieldGoalsMade'] || 0,
-                fta: nameMap['avgFreeThrowsAttempted'] || nameMap['freeThrowsAttempted'] || 0,
-                ftm: nameMap['avgFreeThrowsMade'] || nameMap['freeThrowsMade'] || 0,
-                threePA: nameMap['avgThreePointFieldGoalsAttempted'] || nameMap['threePointFieldGoalsAttempted'] || 0,
-                threePM: nameMap['avgThreePointFieldGoalsMade'] || nameMap['threePointFieldGoalsMade'] || 0,
+                fga: getStat(['avgFieldGoalsAttempted', 'fieldGoalsAttempted', 'fga']),
+                fgm: getStat(['avgFieldGoalsMade', 'fieldGoalsMade', 'fgm']),
+                fta: getStat(['avgFreeThrowsAttempted', 'freeThrowsAttempted', 'fta']),
+                ftm: getStat(['avgFreeThrowsMade', 'freeThrowsMade', 'ftm']),
+                threePA: getStat(['avgThreePointFieldGoalsAttempted', 'threePointFieldGoalsAttempted', '3pa']),
+                threePM: getStat(['avgThreePointFieldGoalsMade', 'threePointFieldGoalsMade', '3pm']),
 
-                // Advanced metrics from Site API
-                per: nameMap['PER'] || 0,
-                usage: nameMap['usageRate'] || 0,
-                vorp: nameMap['VORP'] || 0,
-                ortg: nameMap['offensiveRating'] || 0,
-                drtg: nameMap['defensiveRating'] || 0,
-                assistRatio: nameMap['assistRatio'] || 0,
-                offRebPg: nameMap['avgOffensiveRebounds'] || 0,
-                defRebPg: nameMap['avgDefensiveRebounds'] || 0,
-                offRebPct: nameMap['offensiveReboundPct'] || 0,
-                defRebRate: nameMap['defReboundRate'] || 0,
-                rebRate: nameMap['reboundRate'] || 0,
-
-                // Per-48 stats
-                pts48: nameMap['avg48Points'] || 0,
-                reb48: nameMap['avg48Rebounds'] || 0,
-                ast48: nameMap['avg48Assists'] || 0,
-                stl48: nameMap['avg48Steals'] || 0,
-                blk48: nameMap['avg48Blocks'] || 0,
-                tov48: nameMap['avg48Turnovers'] || 0,
-
-                // Totals
-                totalPoints: nameMap['points'] || 0,
-                totalRebounds: nameMap['totalRebounds'] || nameMap['rebounds'] || 0,
-                totalAssists: nameMap['assists'] || 0,
-                totalSteals: nameMap['steals'] || 0,
-                totalBlocks: nameMap['blocks'] || 0,
-                totalTurnovers: nameMap['totalTurnovers'] || nameMap['turnovers'] || 0,
-                
-                // Misc
-                doubleDouble: nameMap['doubleDouble'] || 0,
-                tripleDouble: nameMap['tripleDouble'] || 0,
-                estimatedPossessions: nameMap['avgEstimatedPossessions'] || nameMap['estimatedPossessions'] || 0
+                // Advanced
+                per: getStat(['PER', 'per']),
+                usage: getStat(['usageRate', 'usage']),
+                vorp: getStat(['VORP', 'vorp']),
+                ortg: getStat(['offensiveRating', 'ortg']),
+                drtg: getStat(['defensiveRating', 'drtg']),
+                assistRatio: getStat(['assistRatio']),
+                estimatedPossessions: getStat(['avgEstimatedPossessions', 'estimatedPossessions'])
             };
         } catch (error) {
             console.warn(`[Stats] Full fetch failed for ${playerId}:`, error.message);
