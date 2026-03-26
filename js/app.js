@@ -180,10 +180,11 @@ const app = {
         );
 
         // 3. Final Model Update & UI Refresh
-        models.updateAllPlayers();
-        models.updateTeamRankings();
-        ui.renderTeamRankings();
-        if (ui.currentView === 'players') ui.renderPlayers();
+        window.store.updateLoadingProgress('playerStats', allPlayerEntries.length, allPlayerEntries.length, 'done');
+        window.models.updateAllPlayers();
+        window.models.updateTeamRankings();
+        window.ui.renderTeamRankings();
+        if (window.ui.currentView === 'players') window.ui.renderPlayers();
 
         console.log(`[CompositeNBA] Stats sync complete: ${allPlayerEntries.length} players tracked.`);
     },
