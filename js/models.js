@@ -48,8 +48,8 @@ const models = {
             const roster = rosters[teamId];
             if (!roster || !roster.athletes) return;
             roster.athletes.forEach(a => {
-                // Strict 20 Games Played requirement for league normalization to avoid outliers
-                if (a.realStats && a.realStats.gp >= 20 && a.realStats.mpg >= 10) {
+                // Relaxed requirements to ensure normalization baseline is ALWAYS populated
+                if (a.realStats && (a.realStats.gp > 0 || a.realStats.ppg > 0)) {
                     allStats.push(a.realStats);
                     
                     const posAbbrev = a.position?.abbreviation || 'G';
